@@ -39,6 +39,17 @@ def _run_checks(runtime, app, qapp) -> list[Check]:
     results: list[Check] = []
     # 自检前后的项目快照：自检**不允许**改动任何项目文件（有事故前科）
     before_snapshot = snapshot(app.state.workspace)
+    # 也**不允许**改动 git 历史：自检曾经真的执行了命令面板里的「提交」，
+    # 每次跑都把项目仓库提交一次，而文件内容一个字节没变（哈希检查抓不到）。
+    before_head = ""
+    try:
+        from tcide.gitops import GitRepo
+
+        repo = GitRepo(app.state.root)
+        if repo.owns_repo():
+            before_head = repo.head_sha()
+    except Exception:      # noqa: BLE001 - 没有 git 就跳过这项守卫
+        before_head = ""
 
     def check(name: str, fn: Callable[[], tuple[bool, str]]) -> None:
         try:
@@ -176,10 +187,18 @@ def _run_checks(runtime, app, qapp) -> list[Check]:
 
     # ---- 命令面板 -------------------------------------------------------
     def palette() -> tuple[bool, str]:
+        """命令面板：打开 / 过滤 / 执行。
+
+        **必须挑一条无副作用的命令**。第一版这里过滤的是「提交」并真的执行了，
+        于是**每次自检都 git 提交一次项目仓库** —— 真实事故：项目历史里混进了
+        若干条自检产生的提交（作者被写成 ``TCIDE <tcide@example.com>``，
+        消息是 gitintel 的建议格式）。文件哈希检查抓不到它，因为提交不改内容。
+        现在改用「刷新文件树」。
+        """
         app.cmd_palette()
         pump()
         opened = app.state.palette_open
-        app.on_palette_filter("提交")
+        app.on_palette_filter("刷新文件树")
         filtered = list(app.state.palette_filtered)
         app.on_palette_pick(filtered[0] if filtered else "")
         app.on_palette_accept()
@@ -187,7 +206,7 @@ def _run_checks(runtime, app, qapp) -> list[Check]:
         return (opened and filtered and not app.state.palette_open,
                 f"过滤出 {len(filtered)} 条，执行后状态：{app.state.status_left[:40]}")
 
-    check("命令面板：打开/过滤/执行", palette)
+    check("命令面板：打开/过滤/执行（用无副作用命令）", palette)
 
     # ---- AI 面板（离线演练）---------------------------------------------
     def offline_agent() -> tuple[bool, str]:
@@ -479,9 +498,25 @@ def _run_checks(runtime, app, qapp) -> list[Check]:
                          if before_snapshot[key] != after[key])
         if added or removed or changed:
             return False, f"新增 {added} / 删除 {removed} / 修改 {changed}"
-        return True, f"{len(after)} 个文件全部未被改动"
 
-    check("自检不得改动项目文件", integrity)
+        # 只比文件内容**不够**：自检曾经真的执行了命令面板里的「提交」，
+        # 每次跑都把项目仓库提交一次，而文件内容一个字节都没变（哈希检查照样通过）。
+        # 所以还要确认 git HEAD 没动。
+        head_note = ""
+        try:
+            from tcide.gitops import GitRepo
+
+            repo = GitRepo(app.state.root)
+            if repo.owns_repo():
+                if repo.head_sha() != before_head:
+                    return False, (f"自检改动了 git HEAD："
+                                   f"{before_head[:8]} → {repo.head_sha()[:8]}")
+                head_note = f"；git HEAD 未变（{before_head[:8]}）"
+        except Exception as exc:      # noqa: BLE001 - 没有 git 就当跳过这项
+            head_note = f"；git 检查跳过（{type(exc).__name__}）"
+        return True, f"{len(after)} 个文件全部未被改动{head_note}"
+
+    check("自检不得改动项目文件与 git 历史", integrity)
 
     # 注：``<Web>`` 编辑器（QtWebEngine + QWebChannel）**暂不放进默认窗口**。
     # 实测结论（tools/probe_webchannel.py）：channel **在页面加载之前**建立时
