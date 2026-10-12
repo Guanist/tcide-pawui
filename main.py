@@ -25,6 +25,7 @@ import json
 import os
 import sys
 import threading
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -244,6 +245,59 @@ if __name__ == "__main__":
         self.pet_painter = PetPainter()
         self.runtime = None            # 由 create_runtime 注入
         self._lock = threading.Lock()
+        #: 跨线程投递（见 _post_to_gui）：GUI 线程认领自己的 ident，工作线程排队
+        self._gui_thread_id = threading.get_ident()
+        self._gui_lock = threading.Lock()
+        self._gui_queue: deque = deque()
+        self._gui_timer = None
+
+    # -- 跨线程投递：工作线程绝不直接碰界面 --------------------------------
+    #
+    # 事故记录（真实运行时报的警告，不是推测）：
+    #   QObject: Cannot create children for a parent that is in a different thread.
+    #   (Parent is QTextDocument(...), parent's thread is QThread(A),
+    #    current thread is QThread(B))
+    # 原因：终端命令与在线 AI 跑在**工作线程**里，跑完却直接调 ``self.push()``
+    # / ``page().runJavaScript()``，于是 PawUI 在 B 线程里更新 Markdown 控件
+    # （QTextDocument 在 A 线程创建）—— Qt 只允许在对象所属线程里访问 GUI 对象，
+    # 轻则警告、重则随机崩溃。
+    #
+    # 做法：工作线程把回调塞进队列，GUI 线程用 QTimer 定期抽干。
+    # 不用 Qt 信号是因为 TCIDEApp 不是 QObject；队列方案不依赖 Qt 版本。
+    # **已经在 GUI 线程时直接执行**，这样离线演练/自检仍是同步语义。
+
+    def _post_to_gui(self, func, *args) -> None:
+        """从**任意线程**安排一段代码在 GUI 线程里执行。"""
+        if threading.get_ident() == self._gui_thread_id:
+            func(*args)
+            return
+        with self._gui_lock:
+            self._gui_queue.append((func, args))
+
+    def _drain_gui_queue(self) -> int:
+        """只在 GUI 线程里被 QTimer 调用：执行排队中的回调。返回执行条数。"""
+        done = 0
+        while True:
+            with self._gui_lock:
+                if not self._gui_queue:
+                    return done
+                func, args = self._gui_queue.popleft()
+            try:
+                func(*args)
+            except Exception as exc:      # noqa: BLE001 - 一个回调失败不该拖垮界面
+                self._set_status(f"回调失败：{type(exc).__name__}: {exc}")
+            done += 1
+
+    def _start_gui_pump(self) -> None:
+        if self._gui_timer is not None:
+            return
+        from PySide6.QtCore import QTimer
+
+        timer = QTimer()
+        timer.setInterval(80)
+        timer.timeout.connect(self._drain_gui_queue)
+        timer.start()
+        self._gui_timer = timer
 
     # -- 与运行时对接 -----------------------------------------------------
 
@@ -392,6 +446,8 @@ if __name__ == "__main__":
         self.state.status_right = f"PawUI · {self.state.provider}/{self.state.model}"
         self.build_palette()
         self.push()
+        # 启动跨线程投递的抽水泵（工作线程的回调靠它回到 GUI 线程执行）
+        self._start_gui_pump()
         # 没打开文件时把「🚀 上手」页签切到前面（只做一次，之后不抢用户的页签）
         self._focus_onboarding_tab()
 
@@ -984,10 +1040,14 @@ if __name__ == "__main__":
             review_gate_enabled=True, on_event=self._on_agent_event)
 
     def _on_agent_event(self, event: AgentEvent) -> None:
-        # 像素宠物跟着编排状态走（9 状态机在 tcide/pet.py 里，可离线测试）
+        # 像素宠物跟着编排状态走（9 状态机在 tcide/pet.py 里，可离线测试）。
+        # pet.feed_event 只动纯 Python 状态，不碰 Qt，所以在工作线程里也安全。
         self.pet.feed_event(event)
         if event.kind in ("task_start", "task_done", "review", "retry", "plan"):
-            self._append_chat("·", f"{event.kind} {event.message}".strip())
+            # 写对话日志要回 GUI 线程：在线模式下这个回调来自工作线程，
+            # 而 chat_log 会被 Markdown 控件渲染（QTextDocument 在主线程）。
+            self._post_to_gui(self._append_chat, "·",
+                              f"{event.kind} {event.message}".strip())
 
     def on_pet_draw(self, painter=None, *_args) -> None:
         """PawUI ``<Canvas on_draw>`` 回调：把当前状态画出来。
@@ -1628,12 +1688,17 @@ if __name__ == "__main__":
             self._set_status(f"终端报错：{event.message}")
 
     def _run_terminal_command(self, text: str) -> None:
-        from tcide.term import encode_output
-
+        """**工作线程**：只做慢的子进程执行，界面更新全部投递回 GUI 线程。"""
         session = self._term_session
         if session is None:
             return
         lines = session.run(text)
+        self._post_to_gui(self._finish_terminal_command, lines, text)
+
+    def _finish_terminal_command(self, lines: list, text: str) -> None:
+        """**GUI 线程**：把终端输出写回页面（runJavaScript 必须在本线程）。"""
+        from tcide.term import encode_output
+
         self._send_to_terminal(encode_output(lines, echo=text))
         self._send_to_terminal({"type": "prompt", "prompt": self._term_prompt()})
 
@@ -1689,17 +1754,27 @@ if __name__ == "__main__":
                          daemon=True).start()
 
     def _online_run(self, requirement: str) -> None:
+        """**工作线程**：只跑模型编排，界面更新投递回 GUI 线程。
+
+        （第一版在这里直接 ``self.push()``，于是 PawUI 在**工作线程**里更新
+        Markdown 控件 —— Qt 报 "Cannot create children for a parent that is in
+        a different thread. (Parent is QTextDocument...)"。）
+        """
         try:
             config = ModelConfig(provider=self.state.provider, model=self.state.model,
                                  api_key=self.state.api_key)
             from tcide.agent import AdapterClient
 
             report = self.make_orchestrator(AdapterClient(config)).run(requirement)
-            self._append_chat("TCIDE", f"完成：{report.summary()}")
+            outcome = f"完成：{report.summary()}"
         except (ModelError, GitError, OSError) as exc:
-            self._append_chat("TCIDE", f"失败：{exc}")
-        finally:
-            self.push()
+            outcome = f"失败：{exc}"
+        self._post_to_gui(self._finish_online_run, outcome)
+
+    def _finish_online_run(self, outcome: str) -> None:
+        """**GUI 线程**：写入对话并刷新界面。"""
+        self._append_chat("TCIDE", outcome)
+        self.push()
 
     def cmd_clear_chat(self, *_args) -> None:
         self.state.chat_log = "_（已清空）_\n"

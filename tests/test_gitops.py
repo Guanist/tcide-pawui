@@ -42,6 +42,34 @@ class TestBasics:
         with pytest.raises(GitError):
             repo.run("status")
 
+    def test_init_in_subdirectory_of_a_repo_creates_its_own(self, git_repo):
+        """落在**别人的工作树里**时，init() 必须真的建一个新仓库。
+
+        真实事故（不是假想）：测试夹具把临时目录建在项目仓库的工作树内，
+        ``is_repo()`` 因为 git 向上找到父仓库而返回 True，于是 ``init()``
+        跳过建仓库，紧接着 ``stage_all()`` / ``commit()`` **提交进了真实项目仓库**
+        —— 那次真把文件提交进了 tcide-pawui 自己的历史里。
+        """
+        inner = git_repo.path / "inner"
+        inner.mkdir()
+        (inner / "note.txt").write_text("hello\n", encoding="utf-8")
+        repo = GitRepo(inner)
+
+        assert repo.is_repo() is True, "子目录当然算'在工作树里'"
+        assert repo.owns_repo() is False, "但它不是仓库根"
+
+        repo.init()
+        assert repo.owns_repo() is True, "init() 之后它必须成为自己的仓库根"
+        assert (inner / ".git").exists(), "没有真的建出 .git"
+
+        # 关键：之后的暂存/提交只能影响这个新仓库
+        repo.ensure_identity()
+        repo.stage_all()
+        repo.commit("chore: 内部仓库自己的提交")
+        assert repo.is_clean()
+        assert not git_repo.is_clean(), (
+            "父仓库被这次提交影响了 —— 说明 init() 又退化成了操作父仓库")
+
     def test_timeout_argument_is_honored(self, git_repo):
         assert GitRepo(git_repo.path, timeout=7).timeout == 7
 

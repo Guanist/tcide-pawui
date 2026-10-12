@@ -24,3 +24,6 @@ Thumbs.db
 # 应用运行时产物
 .tcide/context/static.md
 *.tcide-tmp
+
+# 临时输出（曾经被测试的 git add -A 顺手提交进历史）
+*.log

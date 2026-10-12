@@ -237,11 +237,26 @@ class GitRepo:
         return outcome
 
     def is_repo(self) -> bool:
-        """当前目录是否是 git 仓库（工作树内任意位置都算）。"""
+        """本目录是否**落在**某个 git 工作树里（含作为子目录的情况）。"""
         if not self.available():
             return False
         result = self.run("rev-parse", "--is-inside-work-tree")
         return result.ok and result.stdout.strip() == "true"
+
+    def owns_repo(self) -> bool:
+        """本目录**自己**就是仓库根，而不是落在别人的工作树里。
+
+        为什么必须区分（真实事故）：``is_repo()`` 对"工作树内的任意子目录"都返回
+        True —— git 会向上找父仓库。于是把临时目录建在某个仓库内部时，``init()``
+        会误判"仓库已存在"而跳过 ``git init``，紧接着 ``stage_all()`` / ``commit()``
+        就**直接操作了父仓库**。实测后果：测试套件把文件提交进了真实项目仓库。
+        """
+        if not self.is_repo():
+            return False
+        try:
+            return self.root() == self.path
+        except GitError:
+            return False
 
     def require_repo(self) -> None:
         if not self.is_repo():
@@ -255,8 +270,12 @@ class GitRepo:
     # -- 仓库生命周期 -----------------------------------------------------
 
     def init(self, *, initial_branch: str = "main") -> GitResult:
-        """初始化仓库（重复调用安全）。"""
-        if self.is_repo():
+        """初始化仓库（重复调用安全）。
+
+        只认"本目录就是仓库根"（``owns_repo()``）—— 落在别人的工作树里**不算**
+        已是仓库，否则后续的暂存与提交会打到父仓库上（见 ``owns_repo()`` 的说明）。
+        """
+        if self.owns_repo():
             return self.run("rev-parse", "--short", "HEAD")
         return self.run("init", "-b", initial_branch, check=True)
 

@@ -106,3 +106,87 @@ class TestShellWithGitRepo:
             assert git_repo.is_clean(), "界面上的提交没有真正落盘"
         finally:
             runtime.root.close()
+
+
+class TestThreadMarshalling:
+    """工作线程**绝不直接碰界面**。
+
+    真实运行时报过这条 Qt 警告（不是推测出来的）：
+
+        QObject: Cannot create children for a parent that is in a different thread.
+        (Parent is QTextDocument(...), parent's thread is QThread(A),
+         current thread is QThread(B))
+
+    原因是终端命令与在线 AI 跑在工作线程里，跑完却直接 ``self.push()`` /
+    ``page().runJavaScript()``，于是 PawUI 在 B 线程里更新 A 线程创建的
+    Markdown 控件。Qt 只允许在对象所属线程访问 GUI 对象：轻则警告，重则崩溃。
+    """
+
+    def test_online_run_never_pushes_from_worker(self, shell):
+        import threading
+
+        runtime, app = shell
+        calls: list[int] = []
+        real_push = app.push
+
+        def spy_push(*args, **kwargs):
+            calls.append(threading.get_ident())
+            return real_push(*args, **kwargs)
+
+        class _Report:
+            def summary(self) -> str:
+                return "假的完成摘要"
+
+        class _FakeOrchestrator:
+            def run(self, requirement):
+                return _Report()
+
+        app.push = spy_push                       # type: ignore[assignment]
+        app.make_orchestrator = lambda model: _FakeOrchestrator()  # type: ignore[assignment]
+        app.state.api_key = "test-key"            # 让 on_chat_send 走在线分支
+
+        worker = threading.Thread(target=app._online_run, args=("随便一个需求",))
+        worker.start()
+        worker.join(timeout=5)
+        assert not worker.is_alive()
+
+        assert calls == [], (
+            f"工作线程里调了 push（线程 {calls}，GUI 线程 {app._gui_thread_id}）—— "
+            f"这就是 QTextDocument 跨线程警告的来源")
+        assert app._drain_gui_queue() >= 1, "投递的回调没有被抽干"
+        assert calls and calls[0] == app._gui_thread_id, "抽干后应在 GUI 线程里 push"
+        assert "假的完成摘要" in app.state.chat_log
+
+    def test_terminal_command_returns_to_gui_thread(self, shell):
+        import threading
+
+        from tcide.term import TerminalSession
+
+        runtime, app = shell
+        seen: list[int] = []
+        app._send_to_terminal = lambda message: seen.append(          # type: ignore[assignment]
+            threading.get_ident())
+
+        # 用**真实**会话（跑真 echo）：encode_output 要的是 TermLine 对象，
+        # 第一版我塞了普通字符串，于是 AttributeError 被抽水泵兜底吃掉、
+        # 测试只看到"什么都没发"。
+        app._term_session = TerminalSession(app._terminal_runner)     # type: ignore[assignment]
+
+        worker = threading.Thread(target=app._run_terminal_command, args=("echo hi",))
+        worker.start()
+        worker.join(timeout=20)
+        assert not worker.is_alive()
+
+        assert seen == [], "工作线程里直接给终端页面发消息了（runJavaScript 必须在本线程）"
+        assert app._drain_gui_queue() >= 1
+        assert seen and set(seen) == {app._gui_thread_id}, (
+            f"终端输出应当在 GUI 线程里发：{seen} vs {app._gui_thread_id}")
+
+    def test_post_to_gui_runs_immediately_on_gui_thread(self, shell):
+        """已经在 GUI 线程时**同步执行** —— 离线演练与自检依赖这个语义。"""
+        runtime, app = shell
+        ran: list[str] = []
+        app._post_to_gui(ran.append, "立刻")
+        assert ran == ["立刻"], "GUI 线程里被不必要地延迟了"
+        assert app._gui_queue == deque() if False else True      # 队列没被污染
+        assert not app._gui_queue, "GUI 线程里不该往队列塞东西"

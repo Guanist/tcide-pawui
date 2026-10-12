@@ -23,7 +23,14 @@ from tcide.indexer import ProjectIndex
 from tcide.memory import ProjectMemoryBuilder
 from tcide.workspace import Workspace
 
-SCRATCH = Path(__file__).resolve().parent / ".scratch"
+#: 测试临时根。**刻意放在项目仓库之外**（与项目目录平级）。
+#:
+#: 为什么不能放在仓库内部（真实事故）：临时目录一旦落在某个 git 工作树里，
+#: ``GitRepo.is_repo()`` 就会因为 git 向上找到父仓库而返回 True ——
+#: 于是"普通目录"不再普通（``test_is_repo_false_for_plain_dir`` 这类断言失效），
+#: 更糟的是夹具的 ``stage_all()`` / ``commit()`` 会**直接提交进真实项目仓库**
+#: （发生过：tcide-pawui 的历史里混进了测试产生的提交）。
+SCRATCH = Path(__file__).resolve().parent.parent.parent / ".tcide-test-scratch"
 
 
 def pytest_configure(config) -> None:
@@ -226,6 +233,14 @@ def git_repo():
     root.mkdir(parents=True)
     repo = GitRepo(root)
     repo.init()
+    # 防回归：临时仓库**必须**自己就是仓库根。
+    # 第一版的 init() 用 is_repo() 判断"是否已是仓库"，只要临时目录落在某个
+    # 仓库的工作树内，git 就会向上找到父仓库 → init() 跳过建仓库，随后
+    # stage_all()/commit() **直接提交进了那个真实仓库**（真的发生过）。
+    # 现在 SCRATCH 已在仓库之外，这条断言是第二道防线。
+    if not repo.owns_repo():
+        raise RuntimeError(
+            f"临时仓库没有真正建立，它落在别的仓库工作树里（会污染真实仓库）: {root}")
     repo.ensure_identity()
     (root / "src").mkdir()
     (root / "src" / "app.py").write_text("value = 1\n", encoding="utf-8")
