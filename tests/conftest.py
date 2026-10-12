@@ -23,6 +23,9 @@ from tcide.indexer import ProjectIndex
 from tcide.memory import ProjectMemoryBuilder
 from tcide.workspace import Workspace
 
+#: 项目根（也就是本仓库的根目录）
+ROOT = Path(__file__).resolve().parent.parent
+
 #: 测试临时根。**刻意放在项目仓库之外**（与项目目录平级）。
 #:
 #: 为什么不能放在仓库内部（真实事故）：临时目录一旦落在某个 git 工作树里，
@@ -30,7 +33,7 @@ from tcide.workspace import Workspace
 #: 于是"普通目录"不再普通（``test_is_repo_false_for_plain_dir`` 这类断言失效），
 #: 更糟的是夹具的 ``stage_all()`` / ``commit()`` 会**直接提交进真实项目仓库**
 #: （发生过：tcide-pawui 的历史里混进了测试产生的提交）。
-SCRATCH = Path(__file__).resolve().parent.parent.parent / ".tcide-test-scratch"
+SCRATCH = ROOT.parent / ".tcide-test-scratch"
 
 
 def pytest_configure(config) -> None:
@@ -217,6 +220,30 @@ def index(workspace: Workspace) -> ProjectIndex:
 @pytest.fixture
 def memory(workspace: Workspace):
     return ProjectMemoryBuilder(workspace).build()
+
+
+@pytest.fixture(autouse=True)
+def _project_repo_untouched():
+    """守护：任何用例都**不得**改动本项目自己的 git 仓库。
+
+    为什么需要这条：本项目初始化成 git 仓库之后，出现了"测试跑完仓库里多了
+    一个提交"的真实事故（作者被写成 ``TCIDE <tcide@example.com>``，也就是
+    ``GitRepo.ensure_identity()`` 设的身份）。这种事故**静默且不可逆**：
+    损坏的是使用者的真实历史。
+
+    这里在每条用例前后比对 HEAD 与工作区状态，谁动了就当场指名道姓地失败。
+    """
+    from tcide.gitops import GitRepo
+
+    guard = GitRepo(ROOT)
+    if not guard.owns_repo():
+        yield                                  # 项目不是仓库时无事可守
+        return
+    head_before = guard.head_sha()
+    yield
+    head_after = guard.head_sha()
+    assert head_after == head_before, (
+        "这个用例改动了项目仓库的 HEAD（测试不得提交到真实仓库）")
 
 
 @pytest.fixture
