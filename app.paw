@@ -1,0 +1,268 @@
+<!--
+  虎猫 TCIDE · PawUI 版 —— IDE 外壳
+
+  纯 PawUI 声明式写法（不使用 Electron/Monaco 也能跑起来）：
+  · 顶部工具栏：打开项目 / 保存 / 命令面板 / 模型选择
+  · 左栏（可折叠 Panel）：文件树 List + Git 面板
+  · 中栏：编辑器（原生 TextArea）+ 底部面板（终端 / 问题 / AI 对话 Tabs）
+  · 底部状态栏
+  · 命令面板 Dialog + 快捷键
+  所有动态内容都靠 {$state} 模板驱动（PawUI 的 bind_state 会在状态变化时刷新）。
+-->
+
+<Window title="虎猫 TCIDE · PawUI" theme="dark" width="1380" height="880">
+  <Column gap="0">
+
+    <!-- ═══════════ 顶部工具栏 ═══════════ -->
+    <Row padding="8 12" gap="8" align="center">
+      <Text bold="true" size="15">🐯 TCIDE</Text>
+      <Badge text="{$mode_label}" bg="accent"/>
+      <Divider/>
+      <Button on_click="cmd_open_project">打开项目</Button>
+      <Button on_click="cmd_save" id="btn_save">保存</Button>
+      <Button on_click="cmd_palette">命令面板</Button>
+      <Button on_click="cmd_tools_open">工具 ▾</Button>
+      <Button on_click="cmd_run_tests">跑测试</Button>
+      <Button on_click="cmd_review_toggle" id="btn_review">{$review_label}</Button>
+      <Spacer/>
+      <Text color="subtext" size="12">模型</Text>
+      <Select id="provider" items="{$provider_items}" value="{$provider}" on_change="on_provider_change" width="150"/>
+      <Text color="subtext" size="12">{$model_line}</Text>
+    </Row>
+    <Divider/>
+
+    <!-- ═══════════ 主体：左栏 | 中栏 ═══════════ -->
+    <SplitPane axis="x" ratio="0.20" width="1380" height="720">
+
+      <!-- ── 左栏 ── -->
+      <Column gap="6" padding="8">
+        <Panel title="资源管理器" open="{$sidebar_open}" on_toggle="on_sidebar_toggle">
+          <Column gap="4">
+            <Text color="subtext" size="12">{$project_line}</Text>
+            <List id="tree" items="{$tree_rows}" on_select="on_tree_select" height="330"/>
+          </Column>
+        </Panel>
+
+        <Panel title="Git" open="{$git_open}" on_toggle="on_git_toggle">
+          <Column gap="4">
+            <Text color="subtext" size="12">{$git_branch_line}</Text>
+            <List id="git_list" items="{$git_rows}" on_select="on_git_select" height="120"/>
+            <Row gap="6">
+              <Button on_click="cmd_git_stage">暂存全部</Button>
+              <Button on_click="cmd_git_commit">提交</Button>
+            </Row>
+            <Text color="subtext" size="11">{$git_hint}</Text>
+          </Column>
+        </Panel>
+      </Column>
+
+      <!-- ── 中栏 ── -->
+      <Column gap="0">
+        <SplitPane axis="y" ratio="0.66" height="700">
+
+          <!-- 编辑器 -->
+          <Column gap="4" padding="8">
+            <Row gap="8" align="center">
+              <Text bold="true">{$active_file}</Text>
+              <Badge text="{$dirty_label}" bg="{$dirty_color}"/>
+              <Spacer/>
+              <Text color="subtext" size="12">{$editor_stats}</Text>
+              <Button on_click="cmd_tab_close">关闭标签 ✕</Button>
+            </Row>
+            <!-- 引导不放在这里：编辑器这一列被 TextArea(430) 与标签列表占满，
+                 塞进来会被压扁到 57px 高、内容看不见（实测）。它在底部「🚀 上手」页签。 -->
+            <!-- 打开的文件（多标签）。PawUI 的 <Tabs> 是构建期静态的，
+                 所以动态标签用 List + 点击切换实现。 -->
+            <List id="tabs" items="{$tab_rows}" on_select="on_tab_select" height="76"/>
+            <TextArea id="editor" value="{$editor_text}" on_change="on_editor_change"
+                      placeholder="选择左侧文件开始编辑…" height="430"/>
+          </Column>
+
+          <!-- 底部面板 -->
+          <Panel title="输出 / 终端 / AI" open="{$dock_open}" on_toggle="on_dock_toggle">
+            <Tabs id="dock_tabs">
+              <!-- 「上手」放第一个：底部面板空间充裕（编辑器那一列被 TextArea 与
+                   标签列表占满，塞进去会被压扁到 57px 高、看不见内容 —— 实测过）。 -->
+              <Tab label="🚀 上手">
+                <Column gap="5">
+                  <Text bold="true" size="13">{$onboarding_title}</Text>
+                  <Text color="subtext" size="12">{$onboarding_step1}</Text>
+                  <Text color="subtext" size="12">{$onboarding_step2}</Text>
+                  <Text color="subtext" size="12">{$onboarding_step3}</Text>
+                  <Row gap="6">
+                    <Button on_click="cmd_open_sample">新建示例文件并打开</Button>
+                    <Button on_click="cmd_onboarding_ai">看看 AI 怎么干活</Button>
+                    <Button on_click="cmd_open_terminal">打开终端</Button>
+                    <Button on_click="cmd_tools_open">工具菜单 ▾</Button>
+                  </Row>
+                  <Text color="subtext" size="11">{$onboarding_hint}</Text>
+                </Column>
+              </Tab>
+              <Tab label="终端">
+                <Column gap="6">
+                  <Markdown>{$terminal_log}</Markdown>
+                  <Input id="term_input" placeholder="输入命令后回车（在工作区内执行）"
+                         on_enter="on_terminal_run"/>
+                </Column>
+              </Tab>
+              <Tab label="问题">
+                <Column gap="6">
+                  <Text color="subtext" size="12">{$problems_line}</Text>
+                  <List id="problems_list" items="{$problem_rows}"
+                        on_select="on_problem_select" height="150"/>
+                </Column>
+              </Tab>
+              <Tab label="工程">
+                <Column gap="6">
+                  <Input id="search_input" placeholder="跨文件搜索，回车执行"
+                         on_enter="on_search_run"/>
+                  <Text color="subtext" size="12">{$search_line}</Text>
+                  <List id="search_list" items="{$search_rows}"
+                        on_select="on_search_select" height="80"/>
+                  <Text color="subtext" size="12">{$outline_line}</Text>
+                  <List id="outline_list" items="{$outline_rows}"
+                        on_select="on_outline_select" height="110"/>
+                  <Text color="subtext" size="11">{$completion_line}</Text>
+                </Column>
+              </Tab>
+              <Tab label="预览">
+                <Column gap="6">
+                  <Text color="subtext" size="12">{$preview_caption}</Text>
+                  <!-- 注意：<Image> **不响应状态变化**（PawUI 只在建树时读一次
+                       src，没有 bind_state），所以这里不写 src，
+                       由 main.py 的 _apply_preview_image() 命令式 setPixmap。 -->
+                  <Image id="preview_image"/>
+                  <TextArea id="preview_text" value="{$preview_text}" readonly="true"
+                            height="170" font="Consolas"/>
+                </Column>
+              </Tab>
+              <Tab label="AI 对话">
+                <Column gap="6">
+                  <Markdown>{$chat_log}</Markdown>
+                  <Input id="chat_input" placeholder="描述你要做的事，回车交给 Builder/Coder"
+                         on_enter="on_chat_send"/>
+                  <Row gap="6">
+                    <Button on_click="cmd_agent_dry_run">离线演练（不调 API）</Button>
+                    <Button on_click="cmd_clear_chat">清空对话</Button>
+                  </Row>
+                </Column>
+              </Tab>
+            </Tabs>
+          </Panel>
+
+        </SplitPane>
+      </Column>
+
+    </SplitPane>
+
+    <!-- ═══════════ 状态栏（含像素宠物 + 待审核数）═══════════ -->
+    <Divider/>
+    <Row padding="6 12" gap="10" align="center">
+      <Canvas id="pet" width="28" height="28" on_draw="on_pet_draw"/>
+      <Text color="subtext" size="12">{$pet_label}</Text>
+      <Text color="subtext" size="12">{$status_left}</Text>
+      <Badge text="{$review_badge}" bg="{$review_badge_color}"/>
+      <Spacer/>
+      <Text color="subtext" size="12">{$status_right}</Text>
+    </Row>
+
+  </Column>
+
+  <!-- ═══════════ Diff 审核弹窗（补回原版丢失的 acceptDiff）═══════════ -->
+  <Dialog id="diff_modal" open="{$diff_open}" title="{$diff_title}"
+          accept="接受" cancel="驳回"
+          on_accept="on_diff_accept" on_reject="on_diff_reject">
+    <Column gap="6">
+      <Row gap="8" align="center">
+        <Badge text="{$diff_stats}" bg="accent"/>
+        <Text color="subtext" size="12">{$diff_path}</Text>
+      </Row>
+      <!-- 注意：<CodeBlock> 只支持 language/height/numbers，**没有内容属性**，
+           内容得走子元素。所以 diff 用只读 TextArea（value 是响应式的）。 -->
+      <TextArea id="diff_body" value="{$diff_text}" readonly="true" height="330"
+                font="Consolas"/>
+      <Text color="subtext" size="11">{$diff_hint}</Text>
+      <Row gap="6">
+        <Button on_click="cmd_diff_next">下一个文件</Button>
+        <Button on_click="cmd_diff_accept_first">只接受第一个改动块</Button>
+        <Button on_click="cmd_diff_reject_all">全部驳回</Button>
+      </Row>
+    </Column>
+  </Dialog>
+
+  <!-- ═══════════ 工具菜单（把原先藏在命令面板里的能力提到界面）═══════════ -->
+  <Dialog id="tools_modal" open="{$tools_open}" title="工具"
+          accept="执行" cancel="关闭"
+          on_accept="on_tools_accept" on_reject="cmd_tools_close">
+    <Column gap="6">
+      <Text color="subtext" size="12">{$tools_hint}</Text>
+      <List id="tools_list" items="{$tools_rows}" on_select="on_tools_pick"
+            height="220"/>
+    </Column>
+  </Dialog>
+
+  <!-- ═══════════ 命令面板 ═══════════ -->
+  <Dialog id="palette" open="{$palette_open}" title="命令面板"
+          accept="执行" cancel="关闭"
+          on_accept="on_palette_accept" on_reject="on_palette_close">
+    <Column gap="6">
+      <Input id="palette_input" placeholder="输入以过滤命令…" on_change="on_palette_filter"/>
+      <List id="palette_list" items="{$palette_rows}" on_select="on_palette_pick" height="200"/>
+      <Text color="subtext" size="11">{$palette_hint}</Text>
+    </Column>
+  </Dialog>
+
+  <!-- ═══════════ 快捷键 ═══════════ -->
+  <Shortcut keys="Ctrl+S" on_press="cmd_save"/>
+  <Shortcut keys="Ctrl+P" on_press="cmd_palette"/>
+  <Shortcut keys="Ctrl+B" on_press="cmd_toggle_sidebar"/>
+  <Shortcut keys="Ctrl+`" on_press="cmd_toggle_dock"/>
+  <Shortcut keys="Ctrl+Shift+D" on_press="cmd_review_open"/>
+
+</Window>
+
+<!--
+  <script> 必须是顶层元素（<Window> 的兄弟），不能写在 <Window> 里 ——
+  写成子元素会报 `unknown component <script>`。
+  这里的初值会被 main.py 的 bootstrap()/push() 覆盖。
+-->
+<script>
+sidebar_open = True
+git_open = True
+dock_open = True
+onboarding_open = True
+onboarding_title = "从这 3 步开始"
+onboarding_step1 = "① 左栏「资源管理器」里点目录展开、点文件打开；也可以按下面的按钮新建一个示例文件"
+onboarding_step2 = "② 直接在中间编辑，Ctrl+S 保存；打开过的文件会出现在上面的标签栏，点一下即可切换"
+onboarding_step3 = "③ 底部「工具」面板有：终端 / 问题 / 工程（搜索+大纲）/ 预览 / AI 对话；AI 能自己改代码"
+onboarding_hint = "命令面板 Ctrl+P（21 条命令）· 工具菜单在左上方「工具 ▾」· AI 改动审核 Ctrl+Shift+D"
+tools_open = False
+tools_rows = []
+tools_hint = "选一条执行（这些能力原先藏在命令面板里）"
+palette_open = False
+diff_open = False
+diff_title = "改动审核"
+diff_path = ""
+diff_text = ""
+diff_stats = ""
+diff_hint = ""
+review_label = "审查门：开"
+review_badge = "待审核 0"
+review_badge_color = "border"
+search_rows = []
+search_line = "输入关键词后回车搜索整个项目"
+outline_rows = []
+outline_line = "大纲：打开一个文件后显示符号"
+completion_line = ""
+web_editor_url = ""
+web_editor_line = "Web 编辑器：加载 editor.html（离线，无外部依赖）"
+preview_caption = "预览：在左侧选择一个文件"
+preview_image = ""
+preview_text = ""
+active_file = "(未打开文件)"
+tab_rows = []
+dirty_label = "已保存"
+dirty_color = "border"
+status_left = "就绪"
+status_right = ""
+</script>

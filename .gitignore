@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# 测试
+.pytest_cache/
+tests/.scratch/
+
+# 重新 vendor Monaco 时的临时物（tools/vendor_monaco.py）
+.npm-cache/
+monaco-editor-*.tgz
+
+# 编辑器 / 系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 应用运行时产物
+.tcide/context/static.md
+*.tcide-tmp

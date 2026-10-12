@@ -1,0 +1,110 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: 测试（${{ matrix.os }} / Python ${{ matrix.python }}）
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      # 后端核心只用标准库，所以先**不装任何东西**跑一遍：
+      # 这能证明 tcide/ 确实零第三方依赖（也是 LGPL 边界的一部分）。
+      - name: 后端核心（零第三方依赖）
+        shell: bash
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          # 只排除界面测试（它需要 PySide6/PawUI）；conftest 必须保留，
+          # 否则 fixture 全失效。
+          python -m pytest -q tests/ --ignore=tests/test_shell.py
+
+      # 界面与外壳需要 PawUI（GPL-3.0）与 PySide6，必须离屏跑：
+      # Qt 在无显示环境下会直接段错误。
+      - name: 安装界面依赖
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install PySide6 pytest "pawui>=0.1.1"
+
+      - name: 全量测试（离屏）
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -m pytest -q
+
+      - name: 界面外壳自检
+        shell: bash
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PYTHONPATH: ${{ github.workspace }}
+        run: python main.py --selftest
+
+  quality:
+    name: 代码质量与自检
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 架构分析（有循环依赖才失败）
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -m tcide.cli -C . analyze
+
+      - name: 索引概览
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -m tcide.cli -C . index
+
+      - name: 静态检查（信息性，暂不作为门禁）
+        continue-on-error: true
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -m tcide.cli -C . check --strict
+
+      # 用 PawUI 自己的校验器静态检查界面定义。这条**是门禁**：
+      # 属性名写错不会让窗口建树失败（控件只是永远空着），界面自检也发现不了。
+      # 本项目就是靠它抓到 <CodeBlock text="...">（CodeBlock 没有内容属性）——
+      # 也就是说 Diff 审核弹窗里的 diff 曾经从来没显示出来过。
+      - name: 校验 app.paw
+        run: |
+          python -m pip install "pawui>=0.1.1"
+          python -m pawui check app.paw
+
+      - name: 片段表自检（README 宣称 50+）
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -m tcide.cli -C . snippet --json > snippets.json && python -c "import json;print('片段数:', len(json.load(open('snippets.json'))))"
+
+  license-boundary:
+    name: 许可证边界（LGPL 库不被 GPL 污染）
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # tcide/ 一旦 import pawui（GPL-3.0），整个库就必须跟着 GPL，
+      # 这条守卫让"不小心加了一行 import"在 CI 上立刻暴露。
+      - name: tcide/ 不得依赖 pawui
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: python -m pytest -q tests/test_layering.py -k boundary

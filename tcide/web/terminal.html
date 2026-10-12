@@ -1,0 +1,180 @@
+<!-- SPDX-FileCopyrightText: 2025 tcide-pawui contributors
+     SPDX-License-Identifier: LGPL-3.0-or-later -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>TCIDE 终端</title>
+<!--
+  离线单文件终端前端。**不引用任何外部网络资源**：
+  qwebchannel.js 由 QtWebEngine 内置资源提供（qrc://），
+  在普通浏览器里打开时自动走 stub 分支。
+
+  协议（与 tcide/web/bridge.py 一致，复用同一个桥工厂）：
+    Python -> 页面: terminalBridge.deliver(JSON)
+                    {type: output, echo, lines:[{text, kind}]}
+                    {type: clear} / {type: prompt, prompt}
+    页面 -> Python: terminalBridge.post(JSON)
+                    {type: ready, message} / {type: command, text}
+  kind: in | out | err | info | meta
+-->
+<style>
+  :root {
+    --bg: #121214; --fg: #e8e8ea; --in: #7dd3fc; --err: #ff6b6b;
+    --info: #a7f3d0; --meta: #9aa4b2; --accent: #4a9eff;
+    --font: "Cascadia Mono", "Consolas", "Menlo", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+               font-family: var(--font); font-size: 13px; overflow: hidden; }
+  #bar { height: 26px; display: flex; align-items: center; gap: 8px;
+         padding: 0 10px; border-bottom: 1px solid #2a2a2e; color: var(--meta); }
+  #bar b { color: var(--fg); }
+  #screen { position: absolute; inset: 26px 0 34px 0; overflow-y: auto;
+            padding: 8px 10px; white-space: pre-wrap; word-break: break-all; }
+  .line { line-height: 20px; }
+  .line.in   { color: var(--in); }
+  .line.err  { color: var(--err); }
+  .line.info { color: var(--info); }
+  .line.meta { color: var(--meta); }
+  #inputrow { position: absolute; left: 0; right: 0; bottom: 0; height: 34px;
+              display: flex; align-items: center; gap: 6px; padding: 0 10px;
+              border-top: 1px solid #2a2a2e; background: #17171a; }
+  #prompt { color: var(--accent); white-space: pre; }
+  #cmd { flex: 1; background: transparent; border: 0; outline: none;
+         color: var(--fg); font-family: var(--font); font-size: 13px; }
+</style>
+</head>
+<body>
+  <div id="bar">🐯 <b>TCIDE 终端</b><span id="status">未连接</span></div>
+  <div id="screen"></div>
+  <div id="inputrow">
+    <span id="prompt">工作区&gt; </span>
+    <input id="cmd" autocomplete="off" spellcheck="false"
+           placeholder="输入命令后回车（在工作区内执行；help 看内建命令）">
+  </div>
+
+  <!-- Qt 内置资源；普通浏览器会忽略，页面自动走 standalone 分支 -->
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+
+<script>
+(function () {
+  "use strict";
+
+  const state = { connected: false, busy: false, lines: 0 };
+  const MAX_LINES = 4000;
+
+  const el = {
+    screen: document.getElementById("screen"),
+    input: document.getElementById("cmd"),
+    prompt: document.getElementById("prompt"),
+    status: document.getElementById("status"),
+  };
+
+  function post(message) {
+    const payload = JSON.stringify(message);
+    if (state.connected && window.terminalBridge) {
+      window.terminalBridge.post(payload);
+    } else {
+      console.log("[terminal -> python]", payload);
+    }
+  }
+
+  function appendLine(text, kind) {
+    const div = document.createElement("div");
+    div.className = "line " + (kind || "out");
+    div.textContent = text;
+    el.screen.appendChild(div);
+    state.lines += 1;
+    while (state.lines > MAX_LINES && el.screen.firstChild) {
+      el.screen.removeChild(el.screen.firstChild);
+      state.lines -= 1;
+    }
+    el.screen.scrollTop = el.screen.scrollHeight;
+  }
+
+  function apply(message) {
+    if (!message || !message.type) { return; }
+    if (message.type === "output") {
+      (message.lines || []).forEach(function (line) {
+        appendLine(line.text, line.kind);
+      });
+      state.busy = false;
+    } else if (message.type === "clear") {
+      el.screen.innerHTML = "";
+      state.lines = 0;
+      state.busy = false;
+    } else if (message.type === "prompt") {
+      el.prompt.textContent = message.prompt || "工作区> ";
+    } else if (message.type === "error") {
+      appendLine(String(message.message || "未知错误"), "err");
+      state.busy = false;
+    }
+  }
+
+  function submit() {
+    const text = el.input.value;
+    if (!text.trim() || state.busy) { return; }
+    state.busy = true;
+    el.input.value = "";
+    appendLine(el.prompt.textContent + text, "in");
+    post({ type: "command", text: text });
+    // 若 Python 侧没有回包（例如没连上桥），别把界面卡死
+    setTimeout(function () { state.busy = false; }, 15000);
+  }
+
+  el.input.addEventListener("keydown", function (event) {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      submit();
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      post({ type: "history", direction: "previous" });
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      post({ type: "history", direction: "next" });
+    } else if (event.key === "l" && event.ctrlKey) {
+      event.preventDefault();
+      post({ type: "command", text: "clear" });
+    }
+  });
+
+  function boot() {
+    el.input.focus();
+    appendLine("TCIDE 终端（离线前端；命令在工作区内真实执行）", "info");
+    if (typeof QWebChannel === "undefined" || !window.qt ||
+        !window.qt.webChannelTransport) {
+      state.connected = false;
+      el.status.textContent = "独立模式（没有 Qt）";
+      post({ type: "ready", message: "standalone" });
+      return;
+    }
+    new QWebChannel(window.qt.webChannelTransport, function (channel) {
+      window.terminalBridge = channel.objects.terminalBridge;
+      state.connected = true;
+      el.status.textContent = "已连接";
+      window.terminalBridge.deliver.connect(function (payload) {
+        try {
+          apply(JSON.parse(payload));
+        } catch (error) {
+          appendLine("坏消息: " + String(error), "err");
+        }
+      });
+      post({ type: "ready", message: "qwebchannel" });
+    });
+  }
+
+  // 暴露给 Python（QtWebEngine 里也能直接 runJavaScript 调用）
+  window.tcideApply = apply;
+  window.tcideLineCount = function () { return state.lines; };
+  window.tcideSetInput = function (text) { el.input.value = text; };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
+})();
+</script>
+</body>
+</html>

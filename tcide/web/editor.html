@@ -1,0 +1,476 @@
+<!-- SPDX-FileCopyrightText: 2025 tcide-pawui contributors
+     SPDX-License-Identifier: LGPL-3.0-or-later -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>TCIDE 编辑器</title>
+<!--
+  离线编辑器前端：**优先用 vendored 的 Monaco**，拿不到就退回内置编辑器。
+
+  为什么能离线：``vendor/monaco`` 是把 npm 包里的 ``min/vs`` 树抽出来随程序分发的
+  （见 tools/vendor_monaco.py），**没有任何 CDN 引用**。实测（tools/probe_monaco.py）
+  从 ``file://`` 用 AMD 方式可以直接加载：``loader.js`` +
+  ``require(["vs/editor/editor.main"])``，开箱 **91 种语言**。
+  注意 ESM 布局在 ``file://`` 下会被 CORS 拦住，所以必须走 AMD。
+
+  协议（与 tcide/web/bridge.py 一致，两个引擎实现共用）：
+    Python -> 页面: editorBridge.deliver(JSON)
+                    {type: text|theme|markers|goto|completion|readonly}
+    页面 -> Python: editorBridge.post(JSON)
+                    {type: ready|change|cursor|command|error}
+  另外暴露 window.tcideValue / tcideApply / tcideSetInput / tcideEngine 供测试与应用调用。
+-->
+<link rel="stylesheet" href="vendor/monaco/editor/editor.main.css">
+<style>
+  :root {
+    --bg: #1d1d1f; --fg: #e8e8ea; --accent: #4a9eff; --line: #3a3a3c;
+    --font: "Cascadia Mono", "Consolas", "Menlo", monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+               font-family: var(--font); font-size: 13px; overflow: hidden; }
+  #head { height: 26px; display: flex; align-items: center; gap: 8px;
+          padding: 0 10px; border-bottom: 1px solid var(--line);
+          color: #9aa4b2; font-size: 12px; white-space: nowrap; }
+  #path { color: var(--fg); font-weight: 600; }
+  #engine { color: var(--accent); }
+  #completion { color: var(--accent); margin-left: auto; overflow: hidden; }
+  #wrap { position: relative; height: calc(100% - 26px); }
+  #monaco { position: absolute; inset: 0; }
+  /* 分屏：第二个 Monaco（只读参考）。PawUI 的 <SplitPane> 是构建期静态的，
+     所以分屏在页面内实现；Monaco 支持多实例。 */
+  #split { position: absolute; top: 0; right: 0; bottom: 0; width: 45%;
+           display: none; border-left: 1px solid var(--line); }
+  #split.on { display: block; }
+  #splitHead { position: absolute; top: 0; left: 0; right: 0; height: 22px;
+               display: flex; align-items: center; gap: 6px; padding: 0 8px;
+               background: #17171a; color: #9aa4b2; font-size: 11px; z-index: 4; }
+  #splitHead button { background: #26262a; color: #e8e8ea; border: 1px solid var(--line);
+                      border-radius: 4px; font-size: 11px; cursor: pointer; }
+  #splitEditor { position: absolute; top: 22px; left: 0; right: 0; bottom: 0; }
+  #fallback { position: absolute; inset: 0; display: none; }
+  #fallback.on { display: flex; }
+  #gutter { width: 52px; flex: none; background: #26262a; color: #6b7280;
+            text-align: right; padding: 8px 8px 8px 0; overflow: hidden;
+            border-right: 1px solid var(--line); user-select: none; }
+  .ln { line-height: 20px; height: 20px; padding-right: 4px; }
+  .ln.added   { color: #34d399; box-shadow: inset 3px 0 0 #34d399; }
+  .ln.removed { color: #ff453a; box-shadow: inset 3px 0 0 #ff453a; }
+  .ln.changed { color: #f5a623; box-shadow: inset 3px 0 0 #f5a623; }
+  .ln.error   { color: #ff453a; background: rgba(255, 69, 58, .18); }
+  .ln.warning { color: #f5a623; background: rgba(245, 166, 35, .15); }
+  .ln.info    { color: var(--accent); }
+  #fbEditor { position: relative; flex: 1; }
+  #fbOverlay, #fbCode {
+    position: absolute; inset: 0; margin: 0; border: 0; padding: 8px 10px;
+    font-family: var(--font); font-size: 13px; line-height: 20px;
+    white-space: pre; overflow: auto; tab-size: 4;
+  }
+  #fbOverlay { pointer-events: none; color: var(--fg); z-index: 1; }
+  #fbCode { z-index: 2; background: transparent; color: transparent;
+            caret-color: var(--fg); resize: none; outline: none; }
+  #fbCode::selection { background: rgba(74, 158, 255, .35); }
+  .kw { color: #c792ea; } .str { color: #c3e88d; }
+  .num { color: #f78c6c; } .cm { color: #6b7280; font-style: italic; }
+  #status { position: absolute; right: 8px; bottom: 6px; color: #6b7280;
+            font-size: 11px; z-index: 3; }
+</style>
+</head>
+<body>
+  <div id="head">
+    <span>🐯</span>
+    <span id="path">(未打开文件)</span>
+    <span id="engine">启动中…</span>
+    <span id="completion"></span>
+  </div>
+  <div id="wrap">
+    <div id="monaco"></div>
+    <div id="split">
+      <div id="splitHead">
+        <span id="splitPath">(分屏)</span>
+        <button id="splitCloseBtn" type="button">关闭分屏</button>
+      </div>
+      <div id="splitEditor"></div>
+    </div>
+    <div id="fallback">
+      <div id="gutter"></div>
+      <div id="fbEditor">
+        <pre id="fbOverlay"></pre>
+        <textarea id="fbCode" spellcheck="false" autocomplete="off"></textarea>
+        <div id="status"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Qt 内置资源；普通浏览器会忽略，页面自动走 standalone 分支 -->
+  <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+  <!-- vendored Monaco 的 AMD loader（本地文件，不是 CDN） -->
+  <script src="vendor/monaco/loader.js"></script>
+
+<script>
+(function () {
+  "use strict";
+
+  const state = {
+    connected: false, engine: "none", path: "", markers: [], value: "",
+    readonly: false, language: "plaintext",
+  };
+
+  const el = {
+    path: document.getElementById("path"),
+    engine: document.getElementById("engine"),
+    completion: document.getElementById("completion"),
+    monaco: document.getElementById("monaco"),
+    split: document.getElementById("split"),          // 分屏容器（忘了加它会 TypeError）
+    splitEditorHost: document.getElementById("splitEditor"),
+    fallback: document.getElementById("fallback"),
+    gutter: document.getElementById("gutter"),
+    code: document.getElementById("fbCode"),
+    overlay: document.getElementById("fbOverlay"),
+    status: document.getElementById("status"),
+  };
+
+  function post(message) {
+    const payload = JSON.stringify(message);
+    if (state.connected && window.editorBridge) {
+      window.editorBridge.post(payload);
+    } else {
+      console.log("[editor -> python]", payload);
+    }
+  }
+
+  function lineCount(text) {
+    return text && text.length ? text.split("\n").length : 1;
+  }
+
+  function setEngine(name) {
+    state.engine = name;
+    if (window.__monacoDiag) { window.__monacoDiag.engine = name; }
+    el.engine.textContent = name === "monaco" ? "Monaco" :
+                            name === "builtin" ? "内置编辑器（无 Monaco）" : "未就绪";
+    el.monaco.style.display = name === "monaco" ? "" : "none";
+    el.fallback.classList.toggle("on", name !== "monaco");
+  }
+
+  // ---- 内置后备编辑器 ----
+
+  function builtinRenderGutter() {
+    if (state.engine === "monaco") { return; }
+    const total = lineCount(state.value);
+    const kindOf = {};
+    const order = { error: 0, warning: 1, changed: 2, added: 3, removed: 4, info: 5 };
+    state.markers.forEach(function (marker) {
+      const current = kindOf[marker.line];
+      if (!current || order[marker.kind] < order[current]) {
+        kindOf[marker.line] = marker.kind;
+      }
+    });
+    let html = "";
+    for (let line = 1; line <= total; line += 1) {
+      html += '<div class="ln ' + (kindOf[line] || "") + '">' + line + "</div>";
+    }
+    el.gutter.innerHTML = html;
+    el.status.textContent = total + " 行 · " + state.markers.length + " 个标记";
+  }
+
+  function builtinHighlight() {
+    const escaped = state.value
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    el.overlay.innerHTML = escaped
+      .replace(/(#[^\n]*)/g, '<span class="cm">$1</span>')
+      .replace(/("[^"\n]*"|'[^'\n]*')/g, '<span class="str">$1</span>')
+      .replace(/\b(def|class|import|from|return|if|else|elif|for|while|try|except|with|as|function|const|let|var|export|async|await|fn|struct|impl|pub|use)\b/g,
+               '<span class="kw">$1</span>')
+      .replace(/\b(\d+)\b/g, '<span class="num">$1</span>');
+  }
+
+  function builtinSetValue(text) {
+    state.value = text || "";
+    if (el.code.value !== state.value) { el.code.value = state.value; }
+    builtinHighlight();
+    builtinRenderGutter();
+  }
+
+  function builtinGoto(line, column) {
+    const lines = state.value.split("\n");
+    let offset = 0;
+    for (let index = 0; index < Math.min(line - 1, lines.length); index += 1) {
+      offset += lines[index].length + 1;
+    }
+    offset += Math.max(0, column | 0);
+    el.code.focus();
+    el.code.setSelectionRange(offset, offset);
+  }
+
+  el.code.addEventListener("input", function () {
+    state.value = el.code.value;
+    builtinHighlight();
+    builtinRenderGutter();
+    post({ type: "change", text: state.value });
+  });
+  ["keyup", "click"].forEach(function (name) {
+    el.code.addEventListener(name, function () {
+      const before = state.value.slice(0, el.code.selectionStart);
+      post({ type: "cursor", line: before.split("\n").length,
+             column: before.length - before.lastIndexOf("\n") - 1 });
+    });
+  });
+  el.code.addEventListener("keydown", function (event) {
+    const ctrl = event.ctrlKey || event.metaKey;
+    if (!ctrl) { return; }
+    const table = { s: "save", p: "palette", b: "toggle_sidebar", "`": "toggle_dock" };
+    const name = table[event.key.toLowerCase()];
+    if (name) { event.preventDefault(); post({ type: "command", name: name }); }
+  });
+
+  // ---- Monaco ----
+
+  let editor = null;
+  let monacoTheme = "vs-dark";
+
+  function monacoSetValue(text) {
+    state.value = text || "";
+    if (editor.getValue() !== state.value) { editor.setValue(state.value); }
+  }
+
+  function monacoSetLanguage(language) {
+    state.language = language || "plaintext";
+    try {
+      const model = editor.getModel();
+      if (model) { monaco.editor.setModelLanguage(model, state.language); }
+    } catch (error) { /* 语言 id 不认识也不影响编辑 */ }
+  }
+
+  function monacoSetMarkers(markers) {
+    if (!editor) { return; }
+    const model = editor.getModel();
+    if (!model) { return; }
+    const severity = {
+      error: monaco.MarkerSeverity.Error, warning: monaco.MarkerSeverity.Warning,
+      info: monaco.MarkerSeverity.Info,
+    };
+    const order = { error: 0, warning: 1, changed: 2, added: 3, removed: 4, info: 5 };
+    const byLine = {};
+    markers.forEach(function (marker) {
+      const line = Math.max(1, marker.line | 0);
+      (byLine[line] || (byLine[line] = [])).push(marker);
+    });
+    const converted = Object.keys(byLine).map(function (key) {
+      const line = parseInt(key, 10);
+      const bucket = byLine[key];
+      const worst = bucket.reduce(function (acc, item) {
+        return (order[item.kind] || 9) < (order[acc.kind] || 9) ? item : acc;
+      }, bucket[0]);
+      return {
+        severity: severity[worst.kind] || severity.info,
+        startLineNumber: line, endLineNumber: line,
+        startColumn: 1, endColumn: 1,
+        message: bucket.map(function (item) { return item.kind; }).join("/")
+                 + (worst.text ? ": " + worst.text : ""),
+      };
+    });
+    monaco.editor.setModelMarkers(model, "tcide", converted);
+  }
+
+  //: 自诊断：记录 AMD 加载到底走到哪一步（应用里 Monaco 起不来时靠它定位）
+  window.__monacoDiag = { requireSeen: false, configOk: false, started: 0,
+                          done: 0, error: "", engine: "none", qrc: false,
+                          scripts: [], errors: [] };
+
+  window.addEventListener("error", function (event) {
+    try {
+      window.__monacoDiag.errors.push(String(event.message || event));
+    } catch (ignored) { /* 诊断自己不能抛 */ }
+  });
+
+  function bootMonaco() {
+    const diag = window.__monacoDiag;
+    diag.scripts = Array.prototype.map.call(document.scripts, function (s) {
+      return s.src || "(inline)";
+    });
+    diag.qrc = (typeof QWebChannel !== "undefined");
+    diag.requireSeen = (typeof require !== "undefined");
+    if (typeof require === "undefined") {
+      diag.error = "require 未定义（loader.js 没加载成功？）";
+      return false;
+    }
+    try {
+      require.config({ paths: { vs: "vendor/monaco" } });
+      diag.configOk = true;
+    } catch (error) {
+      diag.error = "require.config 失败: " + error;
+      return false;
+    }
+    diag.started = Date.now();
+    require(["vs/editor/editor.main"], function () {
+      diag.done = Date.now();
+      diag.engine = "monaco";
+      setEngine("monaco");
+      editor = monaco.editor.create(el.monaco, {
+        value: state.value, language: state.language || "plaintext",
+        theme: monacoTheme, automaticLayout: true, fontSize: 13,
+        minimap: { enabled: true }, tabSize: 4, renderWhitespace: "selection",
+        scrollBeyondLastLine: false,
+      });
+      editor.onDidChangeModelContent(function () {
+        state.value = editor.getValue();
+        post({ type: "change", text: state.value });
+      });
+      editor.onDidChangeCursorPosition(function (event) {
+        post({ type: "cursor", line: event.position.lineNumber,
+               column: event.position.column });
+      });
+      editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS,
+                        function () { post({ type: "command", name: "save" }); });
+      monacoSetValue(state.value);
+      monacoSetMarkers(state.markers);
+      post({ type: "ready", message: "monaco" });
+    }, function (error) {
+      diag.error = "require 失败: " + error;
+      diag.engine = "builtin";
+      setEngine("builtin");
+      post({ type: "error", message: "Monaco 加载失败: " + error });
+      post({ type: "ready", message: "builtin" });
+    });
+    return true;
+  }
+
+  // ---- 分屏（第二个 Monaco 实例，只读参考）----
+
+  let splitEditor = null;
+
+  function splitShow(path, text, language) {
+    if (!editor) { return false; }          // Monaco 还没起来就没法分屏
+    el.split.classList.add("on");
+    document.getElementById("splitPath").textContent = path || "(分屏)";
+    const options = {
+      value: text || "", language: language || "plaintext", theme: monacoTheme,
+      automaticLayout: true, fontSize: 13, readOnly: true,
+      minimap: { enabled: false }, tabSize: 4, scrollBeyondLastLine: false,
+    };
+    if (splitEditor) {
+      splitEditor.setValue(text || "");
+      try { monaco.editor.setModelLanguage(splitEditor.getModel(), options.language); }
+      catch (error) { /* 语言不认识无所谓 */ }
+    } else {
+      splitEditor = monaco.editor.create(document.getElementById("splitEditor"),
+                                         options);
+    }
+    return true;
+  }
+
+  function splitClose() {
+    el.split.classList.remove("on");
+    if (splitEditor) { splitEditor.dispose(); splitEditor = null; }
+  }
+
+  const splitBtn = document.getElementById("splitCloseBtn");
+  if (splitBtn) { splitBtn.addEventListener("click", function () {
+    splitClose();
+    post({ type: "command", name: "split_close" });
+  }); }
+
+  // ---- 消息分发（两个引擎共用）----
+
+  function apply(message) {
+    if (!message || !message.type) { return; }
+    if (message.type === "text") {
+      state.path = message.path || "";
+      state.readonly = !!message.readonly;
+      el.path.textContent = state.path || "(未打开文件)";
+      if (state.engine === "monaco") {
+        monacoSetValue(message.text);
+        monacoSetLanguage(message.language);
+      } else {
+        builtinSetValue(message.text);
+      }
+    } else if (message.type === "markers") {
+      state.markers = (message.markers || []).filter(function (marker) {
+        return marker && typeof marker.line === "number";
+      });
+      if (state.engine === "monaco") { monacoSetMarkers(state.markers); }
+      else { builtinRenderGutter(); }
+    } else if (message.type === "goto") {
+      const line = Math.max(1, message.line | 0);
+      if (state.engine === "monaco" && editor) {
+        editor.revealLineInCenter(line);
+        editor.setPosition({ lineNumber: line,
+                             column: Math.max(1, (message.column | 0) + 1) });
+        editor.focus();
+      } else { builtinGoto(line, message.column || 0); }
+    } else if (message.type === "theme") {
+      const colors = message.colors || {};
+      const root = document.documentElement;
+      if (colors.bg) { root.style.setProperty("--bg", colors.bg); }
+      if (colors.fg) { root.style.setProperty("--fg", colors.fg); }
+      if (colors.accent) { root.style.setProperty("--accent", colors.accent); }
+      if (state.engine === "monaco") { monaco.editor.setTheme(monacoTheme); }
+    } else if (message.type === "completion") {
+      const items = message.items || [];
+      el.completion.textContent = items.length ? "建议：" + items.join("、") : "";
+    } else if (message.type === "readonly") {
+      state.readonly = !!message.value;
+      el.code.readOnly = state.readonly;
+      if (state.engine === "monaco" && editor) {
+        editor.updateOptions({ readOnly: state.readonly });
+      }
+    } else if (message.type === "split") {
+      splitShow(message.path, message.text, message.language);
+    } else if (message.type === "splitClose") {
+      splitClose();
+    }
+  }
+
+  // ---- 连接 QWebChannel ----
+
+  function boot() {
+    setEngine("none");
+    builtinSetValue("");
+    if (!bootMonaco()) {
+      setEngine("builtin");
+      post({ type: "ready", message: "builtin" });
+    }
+    if (typeof QWebChannel === "undefined" || !window.qt ||
+        !window.qt.webChannelTransport) {
+      state.connected = false;
+      post({ type: "ready", message: "standalone" });
+      return;
+    }
+    new QWebChannel(window.qt.webChannelTransport, function (channel) {
+      window.editorBridge = channel.objects.editorBridge;
+      state.connected = true;
+      window.editorBridge.deliver.connect(function (payload) {
+        try { apply(JSON.parse(payload)); }
+        catch (error) { post({ type: "error", message: "坏消息: " + error }); }
+      });
+      post({ type: "ready", message: "qwebchannel:" + state.engine });
+    });
+  }
+
+  window.tcideApply = apply;
+  window.tcideValue = function () {
+    return state.engine === "monaco" && editor ? editor.getValue() : state.value;
+  };
+  window.tcideSetInput = function (text) {
+    if (state.engine === "monaco" && editor) { editor.setValue(text || ""); }
+    else { el.code.value = text || ""; state.value = text || ""; }
+  };
+  window.tcideEngine = function () { return state.engine; };
+  window.tcideLineCount = function () { return lineCount(window.tcideValue()); };
+  window.tcideSplitOpen = function () {
+    return !!(splitEditor && el.split.classList.contains("on"));
+  };
+  window.tcideSplitValue = function () {
+    return splitEditor ? splitEditor.getValue() : "";
+  };
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", boot);
+  } else {
+    boot();
+  }
+})();
+</script>
+</body>
+</html>
