@@ -504,6 +504,29 @@ def _run_checks(runtime, app, qapp) -> list[Check]:
 
     check("设置面板：打开/写入/保存/读回 + 样式表", settings_panel)
 
+    def tiger_theme() -> tuple[bool, str]:
+        """虎猫皮毛主题必须**真的被 PawUI 应用**，而不只是写在 .paw 里。
+
+        只检查文件内容是不够的：主题要经过 `Window theme` → `<Theme extends>` →
+        `<Color>` 三层覆盖才落到 `runtime.theme` 上，任何一层没接上，界面就还是
+        默认配色而文件看着"写对了"。
+        """
+        theme = getattr(runtime, "theme", None)
+        if theme is None:
+            return False, "拿不到 runtime.theme"
+        accent = str(getattr(theme, "accent", "")).lower()
+        background = str(getattr(theme, "background", "")).lower()
+        if accent != "#e8802a":
+            return False, f"强调色不是虎橙：{accent!r}（应用到的主题）"
+        if background != "#14100b":
+            return False, f"背景不是虎纹黑：{background!r}"
+        custom = getattr(theme, "custom", {}) or {}
+        if custom.get("stripe") != "#0d0a07":
+            return False, f"自定义令牌 stripe 没生效：{custom.get('stripe')!r}"
+        return True, f"accent={accent} background={background} stripe=#0d0a07"
+
+    check("虎猫皮毛主题已应用（橙/黑/白）", tiger_theme)
+
     def sample_file() -> tuple[bool, str]:
         """「新建示例文件并打开」：真的建出来、真的打开、**用完删掉**。
 

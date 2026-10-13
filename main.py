@@ -438,7 +438,7 @@ if __name__ == "__main__":
         所以这里直接给出最终色值。详见 FEATURE_MATRIX 的 bug 清单。
         """
         if self.runtime is None:
-            return "#ff453a" if self.state.dirty else "#3a3a3c"
+            return "#e8802a" if self.state.dirty else "#3b2c1e"
         theme = self.runtime.theme
         return str(theme.danger if self.state.dirty else theme.border)
 
@@ -1259,10 +1259,12 @@ if __name__ == "__main__":
 
     # -- Diff 审核（补回原版丢失的 acceptDiff / closeDiffModal）-----------
 
-    #: 主题色的十六进制回退值。界面**始终推十六进制**而不是令牌名，
-    #: 所以在未打补丁的 PawUI 上也能正常显示（令牌名会被 Qt 静默丢弃）。
-    FALLBACK_COLORS = {"danger": "#ff453a", "border": "#3a3a3c",
-                       "accent": "#4a9eff", "subtext": "#9aa4b2"}
+    #: 主题色的十六进制回退值（**虎猫皮毛配色**：橙 / 黑 / 白）。
+    #: 界面**始终推十六进制**而不是令牌名，所以在未打补丁的 PawUI 上也能正常显示
+    #: （令牌名经模板传递时不会被解析成颜色，见 FEATURE_MATRIX 的 bug 清单）。
+    FALLBACK_COLORS = {"danger": "#d2503f", "border": "#3b2c1e",
+                       "accent": "#e8802a", "subtext": "#b8a48c",
+                       "amber": "#f5a65b", "fur": "#c96a1e"}
 
     def _hex(self, token: str) -> str:
         """把 ``theme.xxx`` 解析成十六进制；拿不到就用回退值。"""
@@ -1278,7 +1280,7 @@ if __name__ == "__main__":
                         continue
                     if isinstance(value, str) and value.startswith("#"):
                         return value
-        return self.FALLBACK_COLORS.get(name, "#3a3a3c")
+        return self.FALLBACK_COLORS.get(name, "#3b2c1e")
 
     def _current_proposal(self):
         pending = self.review.pending()
