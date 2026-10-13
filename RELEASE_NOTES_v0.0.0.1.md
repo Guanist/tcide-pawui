@@ -1,9 +1,12 @@
-# 虎猫 TCIDE · PawUI 版 0.1.0
+# 虎猫 TCIDE · PawUI 版 0.0.0.1
 
 用 [PawUI](https://github.com/LK-BLOG/PawUI) 声明式 Python UI 重写的
 [TCIDE](https://github.com/Guanist/TCIDE)：覆盖它 README 宣称的全部功能，**包括**
 它在自己代码注释里承认「从未接线、静默失效」的十余个模块，以及仓库历史中丢失的
 Diff 审核弹窗（`acceptDiff`）。
+
+> 版本号取自仓库的发布线：`0.0.0.1`（首个公开快照）。对应 tag `v0.0.0.1`，
+> 应用内可用 `python main.py --version` 查看。
 
 ## 亮点
 
@@ -20,10 +23,11 @@ Diff 审核弹窗（`acceptDiff`）。
 ## 怎么跑（从源码）
 
 ```bash
-git clone https://github.com/Guanist/tcide-pawui
+git clone -b v0.0.0.1 https://github.com/Guanist/tcide-pawui
 cd tcide-pawui
 pip install -r requirements.txt
 python main.py .              # 打开当前目录（也可跟任意项目目录）
+python main.py --version      # 打印版本号
 python main.py --selftest     # 21 项界面自检
 python -m pytest -q           # 994 条测试
 python -m tcide.cli analyze   # 架构分析（可对任意项目跑）

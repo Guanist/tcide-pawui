@@ -20,6 +20,9 @@
 
 from __future__ import annotations
 
+#: 版本号（与发布 tag 对应：v0.0.0.1）
+__version__ = "0.0.0.1"
+
 import argparse
 import json
 import os
@@ -1955,6 +1958,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("project", nargs="?", default=".", help="项目目录")
     parser.add_argument("--shot", help="离屏渲染并截图到指定 png")
     parser.add_argument("--selftest", action="store_true", help="离屏跑交互自检")
+    parser.add_argument("--version", action="version",
+                        version=f"虎猫 TCIDE · PawUI 版 {__version__}")
     parser.add_argument("--provider", default="deepseek", help="模型服务商")
     parser.add_argument("--api-key", default="", help="API Key（留空则离线演练）")
     args = parser.parse_args(argv)
