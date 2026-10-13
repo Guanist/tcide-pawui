@@ -105,7 +105,7 @@ python tools/diagnose_monaco.py                      # Monaco 引擎自诊断
 | Monaco 冷启动 | 离屏冷启动需 20 秒以上（要读 2.4 MB 主文件 + 分块）。已把测试等待窗口放宽到 90 秒，并在页面里保留**内置编辑器回退**。 |
 | Emmet / 真 LSP 富交互（重命名、跳转定义） | 未实现。前者需自研简化版，后者需语言服务器支持与更多 UI。 |
 | `tcide/web/vendor/monaco` | 24.4 MB 第三方资源入库。已提供 `TCIDE_NO_MONACO=1` 轻量构建开关，但不改变"默认仓库较大"这一事实。 |
-| 上游 issue/PR | PawUI 的三条问题已整理成可直接提交的报告，**尚未提交**（需作者授权）。 |
+| 上游 issue/PR | PawUI 的三条问题里，**两条已提交并仍是 OPEN**：[#11](https://github.com/LK-BLOG/PawUI/issues/11)（`bind_state` 二次解析）、[#12](https://github.com/LK-BLOG/PawUI/issues/12)（`<Image>` 不响应状态变化）；第三条（主题令牌经模板不解析）尚未提交。**这条原先写"尚未提交"，已按实际情况更正**。 |
 
 ---
 
