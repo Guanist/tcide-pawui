@@ -709,6 +709,52 @@ def _run_checks(runtime, app, qapp) -> list[Check]:
 
     check("计划模式：权限锁只读 → 出方案 → 落盘 → 批准恢复", plan_mode)
 
+    def follow_and_trace() -> tuple[bool, str]:
+        """实时跟随 + 轨迹：工具事件要留下轨迹，并切到相关面板；跟随可关。"""
+        from tcide.agent import AgentEvent
+
+        def current_tab() -> str:
+            from PySide6.QtWidgets import QTabWidget
+
+            widget = runtime.root.findChild(QTabWidget, "dock_tabs")
+            return widget.tabText(widget.currentIndex()) if widget else ""
+
+        before = app.state.follow
+        try:
+            app._trace().begin_round()
+            app.state.follow = True
+            app.state.follow_label = "跟随：开"
+
+            app._on_agent_event(AgentEvent(kind="tool_call", message="run_command"))
+            pump()
+            app._on_agent_event(AgentEvent(kind="tool_done", message="run_command",
+                                           data={"ok": True, "detail": "pytest"}))
+            pump()
+
+            if app._trace().is_empty():
+                return False, "工具事件没有进轨迹"
+            if "run_command" not in " ".join(app.state.trace_rows):
+                return False, f"轨迹行里没有工具名：{app.state.trace_rows}"
+            if "终端" not in current_tab():
+                return False, f"跟随没切到终端页：{current_tab()!r}"
+
+            # 关掉跟随后不该再自动切页
+            app.cmd_follow_toggle()
+            pump()
+            app._select_dock_tab("问题")
+            app._on_agent_event(AgentEvent(kind="tool_call", message="run_command"))
+            pump()
+            if "问题" not in current_tab():
+                return False, f"关掉跟随后仍被自动切页：{current_tab()!r}"
+            return True, "工具进轨迹、跟随切到终端、关闭跟随后不再自动切页"
+        finally:
+            app.state.follow = before
+            app.state.follow_label = f"跟随：{'开' if before else '关'}"
+            app.refresh_trace()
+            app.push()
+
+    check("实时跟随 + 轨迹：工具事件留痕并切页，跟随可关", follow_and_trace)
+
     def sample_file() -> tuple[bool, str]:
         """「新建示例文件并打开」：真的建出来、真的打开、**用完删掉**。
 

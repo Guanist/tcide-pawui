@@ -60,6 +60,7 @@ from tcide.models import PRESETS, ChatResponse, ModelConfig, ModelError
 from tcide import theme as tiger_theme
 from tcide.changes import ChangeSummary
 from tcide.plans import Plan, PlanStore, draft_plan
+from tcide.trace import TraceRecorder
 from tcide.permissions import LABELS, LEVELS, PermissionPolicy
 from tcide.settings import (Settings, config_path as settings_path,
                             load as load_settings, normalize as normalize_settings,
@@ -172,6 +173,13 @@ class AppState:
     plan_summary: str = "还没有方案"
     plan_hint: str = ""
     plan_toggle_label: str = "进入计划模式"
+    #: 轨迹页签（见 tcide/trace.py）
+    trace_rows: list[str] = field(default_factory=list)
+    trace_summary: str = "本轮还没有步骤"
+    trace_hint: str = ""
+    follow_label: str = "跟随：开"
+    #: 实时跟随：agent 动到哪一页就把底部面板切到哪一页（用户可关）
+    follow: bool = True
     model: str = ""
     api_key: str = ""
     status_left: str = "就绪"
@@ -388,6 +396,7 @@ if __name__ == "__main__":
             "on_settings_provider", "on_settings_timeout", "on_settings_font",
             "on_settings_compact", "on_settings_engine", "on_settings_gate",
             "on_permission_change",
+            "cmd_follow_toggle", "cmd_trace_clear",
             "cmd_plan_toggle", "cmd_plan_save", "cmd_plan_approve",
             "cmd_plan_discard",
             "on_change_select", "cmd_change_accept", "cmd_change_reject",
@@ -1155,6 +1164,10 @@ if __name__ == "__main__":
             "plan_summary": self.state.plan_summary,
             "plan_hint": self.state.plan_hint,
             "plan_toggle_label": self.state.plan_toggle_label,
+            "trace_rows": list(self.state.trace_rows),
+            "trace_summary": self.state.trace_summary,
+            "trace_hint": self.state.trace_hint,
+            "follow_label": self.state.follow_label,
             "settings_restore_label": "开" if self.settings.restore_last_project else "关",
             "settings_key_hint": (f"当前：{settings_summary(self.settings)}"
                                   if self.settings.api_key else "当前未配置 Key"),
@@ -1430,6 +1443,24 @@ if __name__ == "__main__":
         # 像素宠物跟着编排状态走（9 状态机在 tcide/pet.py 里，可离线测试）。
         # pet.feed_event 只动纯 Python 状态，不碰 Qt，所以在工作线程里也安全。
         self.pet.feed_event(event)
+        # 轨迹：工具调用成对记录（开始/结束），拿得到耗时就写耗时
+        if event.kind == "tool_call":
+            name = str(event.message or "")
+            self._trace().tool_started(name)
+            # 工具事件来自工作线程 → 切页签必须回 GUI 线程
+            self._post_to_gui(self._follow_tool, name)
+            self._post_to_gui(self.refresh_trace)
+        elif event.kind in ("tool_result", "tool_done"):
+            detail = str(event.data.get("detail", "") if event.data else "")
+            ok = bool(event.data.get("ok", True)) if event.data else True
+            self._trace().tool_finished(str(event.message or ""), detail=detail,
+                                        ok=ok)
+            self._post_to_gui(self.refresh_trace)
+        elif event.kind == "usage" and event.data:
+            self._trace().usage(event.data.get("prompt_tokens", 0),
+                                event.data.get("completion_tokens", 0))
+            self._post_to_gui(self.refresh_trace)
+
         if event.kind in ("task_start", "task_done", "review", "retry", "plan"):
             # 写对话日志要回 GUI 线程：在线模式下这个回调来自工作线程，
             # 而 chat_log 会被 Markdown 控件渲染（QTextDocument 在主线程）。
@@ -1713,6 +1744,51 @@ if __name__ == "__main__":
         else:
             self.push()
         self._set_status("已丢弃方案")
+
+    # -- 实时跟随 + 轨迹 -------------------------------------------------
+    #
+    # 依据：Trae 的"实时跟随"（写 PRD 切文档、写代码切编辑器、跑命令切终端，
+    # 用户手动切面板即交还主导权）；DeepSeek Harness 的轨迹视图（步骤 + token +
+    # 时长）；Codex 的状态可见性。
+
+    def _trace(self) -> TraceRecorder:
+        if getattr(self, "_trace_recorder", None) is None:
+            self._trace_recorder = TraceRecorder()
+        return self._trace_recorder
+
+    def refresh_trace(self) -> None:
+        recorder = self._trace()
+        self.state.trace_rows = recorder.labels()
+        self.state.trace_summary = recorder.summary()
+        self.state.trace_hint = ("跟随已开启：AI 跑到哪一页就切到哪一页；"
+                                "点「跟随：开」可以关掉（把主导权拿回来）"
+                                if self.state.follow else
+                                "跟随已关闭：底部面板不会被 AI 自动切换")
+
+    def _follow_tool(self, tool: str) -> None:
+        """按工具把面板切到相关页（这一步就是"实时跟随"）。"""
+        if not self.state.follow:
+            return
+        wanted = {"run_command": "终端",
+                  "write_file": "变更", "edit_file": "变更"}.get(str(tool), "")
+        if wanted:
+            self._select_dock_tab(wanted)
+
+    def cmd_follow_toggle(self, *_args) -> None:
+        self.state.follow = not self.state.follow
+        self.state.follow_label = f"跟随：{'开' if self.state.follow else '关'}"
+        self.refresh_trace()
+        self._set_status("实时跟随：" + ("已开启" if self.state.follow else "已关闭（面板不再被自动切换）"))
+        self.push()
+
+    def cmd_trace_clear(self, *_args) -> None:
+        self._trace().begin_round()
+        self.refresh_trace()
+        self.push()
+
+    def _begin_trace_round(self) -> None:
+        self._trace().begin_round()
+        self.refresh_trace()
 
     def cmd_show_changes(self, *_args) -> None:
         """切到「变更」页签（agent 跑完自动调用 —— 这就是"实时跟随"）。"""
@@ -2344,6 +2420,7 @@ if __name__ == "__main__":
                          daemon=True).start()
 
     def _online_run(self, requirement: str) -> None:
+        self._post_to_gui(self._begin_trace_round)
         """**工作线程**：只跑模型编排，界面更新投递回 GUI 线程。
 
         （第一版在这里直接 ``self.push()``，于是 PawUI 在**工作线程**里更新
