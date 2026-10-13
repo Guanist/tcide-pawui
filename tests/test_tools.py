@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2025 tcide-pawui contributors
+# SPDX-FileCopyrightText: 2026 Guanist, Inc.
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """tools.py 的测试：12 个工具 + 安全约束 + 接线自检。"""
 

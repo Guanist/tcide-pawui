@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2025 tcide-pawui contributors
+# SPDX-FileCopyrightText: 2026 Guanist, Inc.
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """虎猫 TCIDE · PawUI 版：入口与后端接线。
 

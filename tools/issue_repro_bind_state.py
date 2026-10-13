@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2025 tcide-pawui contributors
+# SPDX-FileCopyrightText: 2026 Guanist, Inc.
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """最小复现：``bind_state`` 把控件内容当模板二次解析（内容被吃掉）。
 

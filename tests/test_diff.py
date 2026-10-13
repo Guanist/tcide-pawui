@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2025 tcide-pawui contributors
+# SPDX-FileCopyrightText: 2026 Guanist, Inc.
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """diff.py 的测试：生成 / 解析 / 按 hunk 应用 / 审核会话。
 

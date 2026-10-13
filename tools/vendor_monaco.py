@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2025 tcide-pawui contributors
+# SPDX-FileCopyrightText: 2026 Guanist, Inc.
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """把 Monaco 编辑器 vendored 进 ``tcide/web/vendor/monaco/``（离线硬要求）。
 

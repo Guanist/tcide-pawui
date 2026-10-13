@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2025 tcide-pawui contributors
+# SPDX-FileCopyrightText: 2026 Guanist, Inc.
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """统一许可证为 **LGPL-3.0-or-later**（与最新版 PawUI 一致），并给每个源文件加 SPDX 头。
 
@@ -58,11 +58,11 @@ OBSOLETE_LICENSE = ROOT / "tcide" / "LICENSE"
 PAWUI_LICENSE_URL = "https://raw.githubusercontent.com/LK-BLOG/PawUI/main/LICENSE"
 
 PY_HEADER = (
-    "# SPDX-FileCopyrightText: 2025 tcide-pawui contributors\n"
+    "# SPDX-FileCopyrightText: 2026 Guanist, Inc.\n"
     f"# SPDX-License-Identifier: {LICENSE_ID}\n"
 )
 MARKUP_HEADER = (
-    "<!-- SPDX-FileCopyrightText: 2025 tcide-pawui contributors\n"
+    "<!-- SPDX-FileCopyrightText: 2026 Guanist, Inc.\n"
     f"     SPDX-License-Identifier: {LICENSE_ID} -->\n"
 )
 

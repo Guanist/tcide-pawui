@@ -1,16 +1,35 @@
 # 虎猫 TCIDE · PawUI 版 v0.0.0.2
 
-自 `v0.0.0.1` 以来的四项改动。
+自 `v0.0.0.1` 以来的改动。
 
 ## 1. 许可证统一为 LGPL-3.0-or-later
 
 - `LICENSE` 换成 **PawUI 那份 LGPL-3.0 原文**（7,652 字节），删除拆开授权时代的 `tcide/LICENSE`
 - **50 个文件**的 SPDX 头由 GPL 改写为 LGPL
 - 门禁测试同步改为「全仓 LGPL + `LICENSE` 必须是 Lesser 全文」
+- 版权行统一为 **`2026 Guanist, Inc.`**（90 个文件；`tools/apply_licenses.py`
+  的头模板也一起改，否则下次跑脚本会把版权行写回旧值）
 
 **为什么现在能统一**：当初拆开授权，是因为当时 PawUI 是 GPL-3.0，而 GPL 要求链接它的
 组合作品整体按 GPL 发布。**PawUI 之后改为 LGPL-3.0-or-later**（其 `pyproject.toml`
 明确声明，`LICENSE` 为 Lesser 全文），于是不再需要拆开。历史说明保留在文档里。
+
+### 与姊妹项目 `Guanist/TCIDE` 的授权差异（**有意为之**）
+
+| 仓库 | 授权 | 为什么 |
+|---|---|---|
+| **本仓 `tcide-pawui`** | **`LGPL-3.0-or-later`** | 与依赖的 **PawUI 保持一致** |
+| `Guanist/TCIDE` | **`LGPL-3.0-only`**（严格第 3 版） | 该仓自己的选择：不含 "or any later version" |
+
+两处都是同一版权方 `Guanist, Inc.` 的决定。`TCIDE` 的 `tcide_core/` 从本仓 `tcide/`
+搬运而来，同一版权方按 LGPL-3.0 给的选择权再以更严格的 `-only` 发布是允许的。
+**看到两边不一致时不要当成 bug 去"修"** —— 两边都有测试盯着，改错会红。
+
+### 第三方代码
+
+`tcide/web/vendor/monaco/`（151 个文件）是 **Monaco Editor（MIT）**，为离线可用而
+vendored 进来：本版补上了**它自己的** `LICENSE.txt`（原文取自上游）与来源说明 ——
+第三方文件保留各自的授权，**不得**被加上本仓的 LGPL 头。
 
 ## 2. 设置面板
 

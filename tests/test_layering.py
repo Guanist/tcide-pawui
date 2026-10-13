@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2025 tcide-pawui contributors
+# SPDX-FileCopyrightText: 2026 Guanist, Inc.
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """分层与许可证边界守卫（不需要 Qt，秒级）。
 
@@ -226,6 +226,49 @@ class TestLicenseHeaders:
                  if path.is_file()
                  and self.GPL_PATTERN.search(path.read_text(encoding="utf-8"))]
         assert not wrong, f"这些文件仍是 GPL 头: {wrong}"
+
+    def test_copyright_holder_is_guanist_inc(self):
+        """版权行统一为 ``2026 Guanist, Inc.``（用户指定）。
+
+        同时盯着 ``tools/apply_licenses.py`` 的**模板常量** —— 它是幂等写入的，
+        只改文件不改模板的话，下次跑脚本就会把版权行写回旧值（这次差点漏掉）。
+        """
+        wrong: dict[str, str] = {}
+        for path in self._python_files():
+            if not path.is_file():
+                continue
+            head = "\n".join(path.read_text(encoding="utf-8").splitlines()[:3])
+            match = re.search(r"SPDX-FileCopyrightText:\s*(.+)", head)
+            if not match or match.group(1).strip() != "2026 Guanist, Inc.":
+                wrong[path.relative_to(ROOT).as_posix()] = (
+                    match.group(1).strip() if match else "（无版权行）")
+        assert not wrong, f"版权行不是 Guanist, Inc.：{wrong}"
+
+        script = (ROOT / "tools" / "apply_licenses.py").read_text(encoding="utf-8")
+        assert script.count("2026 Guanist, Inc.") >= 2, \
+            "apply_licenses.py 的头模板也要写 Guanist, Inc.（否则下次跑会写回旧值）"
+        assert "tcide-pawui contributors" not in script, \
+            "apply_licenses.py 里还留着旧版权行"
+
+    def test_vendored_third_party_keeps_its_own_license(self):
+        """第三方 vendored 代码（Monaco，MIT）**不得**被加上我们的 SPDX 头。
+
+        给别人的文件改署名是篡改许可证，不是"统一" —— 方向反了：
+        应该是把**它自己的**许可证文本放进来（已放在
+        ``tcide/web/vendor/monaco/LICENSE.txt``）。
+        """
+        vendor = PACKAGE / "web" / "vendor"
+        if not vendor.is_dir():
+            return
+        offenders = [path.relative_to(ROOT).as_posix()
+                     for path in vendor.rglob("*")
+                     if path.is_file()
+                     and path.suffix.lower() in (".js", ".css", ".html")
+                     and "SPDX-FileCopyrightText" in path.read_text(
+                         encoding="utf-8", errors="ignore")[:400]]
+        assert not offenders, f"第三方文件被加了我们的 SPDX 头：{offenders[:5]}"
+        assert (vendor / "monaco" / "LICENSE.txt").is_file(), \
+            "vendored Monaco 必须附带它自己的 MIT 许可证原文"
 
 
 class TestAppWiring:

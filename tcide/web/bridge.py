@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2025 tcide-pawui contributors
+# SPDX-FileCopyrightText: 2026 Guanist, Inc.
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """``<Web>`` 编辑器桥：消息协议（纯逻辑）+ QWebChannel 桥（Qt 惰性导入）。
 

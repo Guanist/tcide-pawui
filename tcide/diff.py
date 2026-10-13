@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: 2025 tcide-pawui contributors
+# SPDX-FileCopyrightText: 2026 Guanist, Inc.
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Diff 引擎与改动审核（原版丢失的 ``acceptDiff`` / ``closeDiffModal``）。
 
