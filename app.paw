@@ -24,6 +24,7 @@
       <Button on_click="cmd_save" id="btn_save">保存</Button>
       <Button on_click="cmd_palette">命令面板</Button>
       <Button on_click="cmd_tools_open">工具 ▾</Button>
+      <Button on_click="cmd_settings_open" id="btn_settings">设置</Button>
       <Button on_click="cmd_run_tests">跑测试</Button>
       <Button on_click="cmd_review_toggle" id="btn_review">{$review_label}</Button>
       <Spacer/>
@@ -192,6 +193,64 @@
     </Column>
   </Dialog>
 
+  <!-- ═══════════ 设置面板 ═══════════
+       控件只用**已验证过**的：Select / Input / Segmented / NumberInput。
+       保存时由 on_settings_accept **直接读控件值**（不依赖 on_change 是否支持），
+       这样即使某个控件的回调没接上，保存出来的值也不会错。 -->
+  <Dialog id="settings_modal" open="{$settings_open}" title="设置"
+          accept="保存" cancel="取消"
+          on_accept="on_settings_accept" on_reject="cmd_settings_close">
+    <Column gap="9">
+      <Text bold="true" size="13">模型</Text>
+      <Text color="subtext" size="12">服务商</Text>
+      <Select id="set_provider" items="{$provider_items}" value="{$settings_provider}"
+              on_change="on_settings_provider" width="190"/>
+      <Text color="subtext" size="12">API Key（留空则走离线演练，不调用任何模型）</Text>
+      <Input id="set_api_key" value="{$settings_api_key}" placeholder="sk-…"/>
+      <Text color="subtext" size="12">模型名（留空用服务商默认）</Text>
+      <Input id="set_model" value="{$settings_model}" placeholder="deepseek-chat"/>
+      <Row gap="8" align="center">
+        <Text color="subtext" size="12">请求超时</Text>
+        <NumberInput id="set_timeout" value="{$settings_timeout}" min="10" max="600"
+                     step="10" on_change="on_settings_timeout" width="110"/>
+        <Text color="subtext" size="12">秒</Text>
+        <Text color="subtext" size="11">{$settings_key_hint}</Text>
+      </Row>
+
+      <Divider/>
+      <Text bold="true" size="13">界面</Text>
+      <Row gap="8" align="center">
+        <Text color="subtext" size="12">字号</Text>
+        <Segmented id="set_font" items="{$font_items}" value="{$settings_font_size}"
+                   on_change="on_settings_font"/>
+        <Text color="subtext" size="12">紧凑模式</Text>
+        <Segmented id="set_compact" items="{$on_off_items}"
+                   value="{$settings_compact_label}" on_change="on_settings_compact"/>
+      </Row>
+      <Row gap="8" align="center">
+        <Text color="subtext" size="12">编辑器引擎</Text>
+        <Segmented id="set_engine" items="{$engine_items}"
+                   value="{$settings_engine_label}" on_change="on_settings_engine"/>
+        <Text color="subtext" size="11">Monaco 功能更全；内置编辑器更省内存</Text>
+      </Row>
+
+      <Divider/>
+      <Text bold="true" size="13">行为</Text>
+      <Row gap="8" align="center">
+        <Text color="subtext" size="12">AI 写操作审查门</Text>
+        <Segmented id="set_gate" items="{$on_off_items}"
+                   value="{$settings_gate_label}" on_change="on_settings_gate"/>
+        <Text color="subtext" size="11">开启后 AI 的改动先进入待审核队列</Text>
+      </Row>
+      <Row gap="8" align="center">
+        <Text color="subtext" size="12">启动时恢复上次项目</Text>
+        <Segmented id="set_restore" items="{$on_off_items}"
+                   value="{$settings_restore_label}" on_change="on_settings_restore"/>
+      </Row>
+      <Text color="subtext" size="11">{$settings_note}</Text>
+    </Column>
+  </Dialog>
+
   <!-- ═══════════ 工具菜单（把原先藏在命令面板里的能力提到界面）═══════════ -->
   <Dialog id="tools_modal" open="{$tools_open}" title="工具"
           accept="执行" cancel="关闭"
@@ -241,6 +300,21 @@ onboarding_hint = "命令面板 Ctrl+P（21 条命令）· 工具菜单在左上
 tools_open = False
 tools_rows = []
 tools_hint = "选一条执行（这些能力原先藏在命令面板里）"
+settings_open = False
+settings_provider = "deepseek"
+settings_api_key = ""
+settings_model = ""
+settings_timeout = 60
+settings_font_size = "13"
+settings_compact_label = "关"
+settings_engine_label = "Monaco"
+settings_gate_label = "开"
+settings_restore_label = "开"
+settings_key_hint = "Key 只存在本机配置文件里，不会进仓库"
+settings_note = "设置保存在用户目录（可用 TCIDE_CONFIG_DIR 指定），不写进项目。"
+font_items = ["11", "12", "13", "14", "15", "16", "18", "20"]
+on_off_items = ["开", "关"]
+engine_items = ["Monaco", "内置"]
 palette_open = False
 diff_open = False
 diff_title = "改动审核"

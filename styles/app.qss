@@ -1,0 +1,219 @@
+/* SPDX-FileCopyrightText: 2025 tcide-pawui contributors
+   SPDX-License-Identifier: LGPL-3.0-or-later
+
+   虎猫 TCIDE · 界面样式表（Qt Style Sheets —— 语法就是 CSS）。
+
+   为什么需要它：PawUI 只给自己的部分组件设了内联样式（Button / Input / List /
+   Table / Panel 头部等，实测 14 处），其余全是 Qt 默认外观 —— 于是整体看着平、
+   没有层次。全局 QSS 能覆盖它**没有**定义的部分，是性价比最高的改造方式。
+
+   注意：内联样式在**同名属性**上优先级更高，所以这里不跟 PawUI 抢它已经定义的
+   属性（如按钮底色），而是在它没管的地方做文章：页签、列表项状态、滚动条、
+   分隔条、对话框、输入框聚焦环、提示气泡、菜单……
+
+   配色与 PawUI 深色主题保持一致（背景 #1d1d1f / 面板 #232326 / 强调 #4a9eff）。
+*/
+
+/* ── 全局基调 ───────────────────────────────────────────────────────── */
+QWidget {
+    font-family: "Microsoft YaHei UI", "Segoe UI", "PingFang SC", sans-serif;
+    font-size: 13px;
+    color: #e8e8ea;
+}
+QMainWindow, QDialog {
+    background: #1d1d1f;
+}
+QToolTip {
+    background: #2c2c30;
+    color: #f2f2f4;
+    border: 1px solid #3a3a3c;
+    border-radius: 6px;
+    padding: 6px 9px;
+}
+
+/* ── 卡片感：把 GroupBox / Dialog 做出层次 ──────────────────────────── */
+QGroupBox {
+    background: #232326;
+    border: 1px solid #313134;
+    border-radius: 10px;
+    margin-top: 14px;
+    padding: 12px 12px 10px 12px;
+    font-weight: 600;
+}
+QGroupBox::title {
+    subcontrol-origin: margin;
+    left: 12px;
+    padding: 0 6px;
+    color: #9aa4b2;
+}
+
+/* ── 页签：下划线式，比默认的"文件夹标签"现代 ──────────────────────── */
+QTabWidget::pane {
+    border: 1px solid #313134;
+    border-radius: 10px;
+    top: -1px;
+    background: #202023;
+}
+QTabBar::tab {
+    background: transparent;
+    color: #9aa4b2;
+    border: none;
+    border-bottom: 2px solid transparent;
+    padding: 8px 14px;
+    margin-right: 2px;
+}
+QTabBar::tab:hover {
+    color: #e8e8ea;
+    background: #26262a;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+}
+QTabBar::tab:selected {
+    color: #ffffff;
+    border-bottom: 2px solid #4a9eff;
+    font-weight: 600;
+}
+
+/* ── 列表：悬停/选中要明显（默认几乎看不出来）──────────────────────── */
+QListWidget, QListView, QTreeView, QTableView {
+    background: #202023;
+    border: 1px solid #313134;
+    border-radius: 8px;
+    padding: 4px;
+    outline: none;
+}
+QListWidget::item, QListView::item, QTreeView::item, QTableView::item {
+    padding: 5px 8px;
+    border-radius: 6px;
+    color: #d8d8dc;
+}
+QListWidget::item:hover, QListView::item:hover,
+QTreeView::item:hover, QTableView::item:hover {
+    background: #2a2a2f;
+    color: #ffffff;
+}
+QListWidget::item:selected, QListView::item:selected,
+QTreeView::item:selected, QTableView::item:selected {
+    background: #2f4f7f;
+    color: #ffffff;
+    border-left: 3px solid #4a9eff;
+}
+QHeaderView::section {
+    background: #26262a;
+    color: #9aa4b2;
+    border: none;
+    border-bottom: 1px solid #313134;
+    padding: 6px 8px;
+}
+
+/* ── 输入控件：圆角 + 聚焦环 ────────────────────────────────────────── */
+QLineEdit, QPlainTextEdit, QTextEdit, QSpinBox, QDoubleSpinBox {
+    background: #1b1b1e;
+    border: 1px solid #36363a;
+    border-radius: 8px;
+    padding: 6px 9px;
+    selection-background-color: #2f4f7f;
+}
+QLineEdit:hover, QPlainTextEdit:hover, QSpinBox:hover {
+    border-color: #45454a;
+}
+QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus,
+QSpinBox:focus, QDoubleSpinBox:focus {
+    border: 1px solid #4a9eff;
+    background: #1e1e22;
+}
+QComboBox {
+    background: #26262a;
+    border: 1px solid #36363a;
+    border-radius: 8px;
+    padding: 5px 10px;
+    min-width: 90px;
+}
+QComboBox:hover { border-color: #4a9eff; }
+QComboBox::drop-down { border: none; width: 20px; }
+QComboBox QAbstractItemView {
+    background: #26262a;
+    border: 1px solid #3a3a3c;
+    border-radius: 8px;
+    selection-background-color: #2f4f7f;
+    padding: 4px;
+}
+
+/* 复选框 / 单选：给个强调色，别用默认的灰勾 */
+QCheckBox, QRadioButton { spacing: 7px; padding: 3px 0; }
+QCheckBox::indicator, QRadioButton::indicator { width: 15px; height: 15px; }
+QCheckBox::indicator:unchecked {
+    border: 1px solid #4a4a50; border-radius: 4px; background: #1b1b1e;
+}
+QCheckBox::indicator:checked {
+    border: 1px solid #4a9eff; border-radius: 4px; background: #4a9eff;
+}
+QRadioButton::indicator:unchecked {
+    border: 1px solid #4a4a50; border-radius: 8px; background: #1b1b1e;
+}
+QRadioButton::indicator:checked {
+    border: 4px solid #4a9eff; border-radius: 8px; background: #ffffff;
+}
+
+/* ── 滚动条：细、悬停变亮（默认那根太笨重）────────────────────────── */
+QScrollBar:vertical {
+    background: transparent; width: 10px; margin: 2px;
+}
+QScrollBar::handle:vertical {
+    background: #3f3f45; border-radius: 5px; min-height: 28px;
+}
+QScrollBar::handle:vertical:hover { background: #56565e; }
+QScrollBar:horizontal {
+    background: transparent; height: 10px; margin: 2px;
+}
+QScrollBar::handle:horizontal {
+    background: #3f3f45; border-radius: 5px; min-width: 28px;
+}
+QScrollBar::handle:horizontal:hover { background: #56565e; }
+QScrollBar::add-line, QScrollBar::sub-line { height: 0; width: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
+
+/* ── 分隔条：能看清、可拖拽 ────────────────────────────────────────── */
+QSplitter::handle { background: #2b2b2f; }
+QSplitter::handle:hover { background: #4a9eff; }
+QSplitter::handle:horizontal { width: 3px; }
+QSplitter::handle:vertical { height: 3px; }
+
+/* ── 菜单 / 工具按钮 ───────────────────────────────────────────────── */
+QMenu {
+    background: #26262a;
+    border: 1px solid #3a3a3c;
+    border-radius: 8px;
+    padding: 5px;
+}
+QMenu::item { padding: 6px 18px; border-radius: 6px; }
+QMenu::item:selected { background: #2f4f7f; color: #ffffff; }
+QToolButton {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 4px 8px;
+}
+QToolButton:hover { background: #2a2a2f; border-color: #3a3a3c; }
+QToolButton:pressed { background: #33333a; }
+
+/* ── 进度/状态：让"正在跑"更明显 ───────────────────────────────────── */
+QProgressBar {
+    background: #26262a;
+    border: none;
+    border-radius: 5px;
+    height: 6px;
+    text-align: center;
+}
+QProgressBar::chunk { background: #4a9eff; border-radius: 5px; }
+
+/* ── 主编辑区：等宽字体、稍宽的行距 ────────────────────────────────── */
+#editor, #diff_body, #term_input {
+    font-family: "Cascadia Mono", "Consolas", "Menlo", monospace;
+    font-size: 13px;
+}
+#editor { background: #1a1a1d; }
+
+/* ── 状态栏：低调一点，不要抢主区 ──────────────────────────────────── */
+QStatusBar { background: #202023; border-top: 1px solid #313134; }
+QStatusBar::item { border: none; }

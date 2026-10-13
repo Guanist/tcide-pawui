@@ -460,6 +460,50 @@ def _run_checks(runtime, app, qapp) -> list[Check]:
 
     check("工具菜单：打开/条目/分派", tools_menu)
 
+    def settings_panel() -> tuple[bool, str]:
+        """设置面板：打开 → 写值 → 保存 → 从磁盘读回一致。
+
+        用 ``TCIDE_CONFIG_DIR`` 指到临时目录，**不碰真实用户配置**。
+        """
+        import os
+        import tempfile
+
+        from PySide6.QtWidgets import QLineEdit
+
+        with tempfile.TemporaryDirectory() as tmp:
+            previous = os.environ.get("TCIDE_CONFIG_DIR")
+            os.environ["TCIDE_CONFIG_DIR"] = tmp
+            try:
+                app.cmd_settings_open()
+                pump()
+                if not app._settings_open:
+                    return False, "设置面板没有打开"
+                field = runtime.root.findChild(QLineEdit, "set_api_key")
+                if field is None:
+                    return False, '找不到输入框（app.paw 里应有 id="set_api_key"）'
+                field.setText("sk-selftest-123456")
+                app.on_settings_accept()
+                pump()
+                from tcide.settings import load as load_settings
+
+                saved = load_settings()
+                if saved.api_key != "sk-selftest-123456":
+                    return False, f"保存后读回不一致：{saved.api_key!r}"
+                if app._settings_open:
+                    return False, "保存后面板没有关闭"
+                if not app._stylesheet_applied:
+                    return False, "样式表没有应用（styles/app.qss）"
+                return True, "打开/写入/保存/读回一致；样式表已应用"
+            finally:
+                if previous is None:
+                    os.environ.pop("TCIDE_CONFIG_DIR", None)
+                else:
+                    os.environ["TCIDE_CONFIG_DIR"] = previous
+                app.settings.api_key = ""         # 不留测试值在内存里
+                app.settings.model = ""
+
+    check("设置面板：打开/写入/保存/读回 + 样式表", settings_panel)
+
     def sample_file() -> tuple[bool, str]:
         """「新建示例文件并打开」：真的建出来、真的打开、**用完删掉**。
 

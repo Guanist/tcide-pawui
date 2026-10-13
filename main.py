@@ -57,6 +57,12 @@ from tcide.indexer import ProjectIndex
 from tcide.diff import ReviewSession, ReviewingWorkspace
 from tcide.memory import ProjectMemoryBuilder
 from tcide.models import PRESETS, ChatResponse, ModelConfig, ModelError
+from tcide.settings import (Settings, config_path as settings_path,
+                            load as load_settings, normalize as normalize_settings,
+                            save as save_settings, summary as settings_summary)
+
+#: 界面样式表（Qt Style Sheets —— 语法就是 CSS）。缺失时静默跳过，不影响功能。
+APP_QSS_FILE = Path(__file__).resolve().parent / "styles" / "app.qss"
 from tcide.panels import (completion_text, line_offset, outline_rows,
                           parse_leading_line, preview_caption, preview_hex,
                           preview_image_path, preview_kind, preview_text,
@@ -245,6 +251,8 @@ if __name__ == "__main__":
         self.state.api_key = api_key
         self.state.model = PRESETS[self.state.provider].model
         self.pet = PetStateMachine()
+        # 设置：从用户目录读入（文件坏掉也返回默认值，不让 IDE 起不来）
+        self.settings = load_settings()
         self.pet_painter = PetPainter()
         self.runtime = None            # 由 create_runtime 注入
         self._lock = threading.Lock()
@@ -316,6 +324,10 @@ if __name__ == "__main__":
             "cmd_open_web_editor", "cmd_open_terminal",
             "cmd_open_sample", "cmd_onboarding_ai",
             "cmd_tools_open", "cmd_tools_close", "on_tools_pick", "on_tools_accept",
+            "cmd_settings_open", "cmd_settings_close", "on_settings_accept",
+            "on_settings_provider", "on_settings_timeout", "on_settings_font",
+            "on_settings_compact", "on_settings_engine", "on_settings_gate",
+            "on_settings_restore",
             "on_onboarding_toggle",
             "cmd_split_open", "cmd_split_close",
             "cmd_lsp_status", "cmd_lsp_start", "cmd_lsp_stop",
@@ -393,6 +405,8 @@ if __name__ == "__main__":
             "outline_rows": self._outline_row_texts,
             "outline_line": self._outline_line,
             "completion_line": self._completion_line(),
+            # ---- 设置面板 ----
+            **self.settings_labels(),
             # ---- 快速上手（空状态引导）与工具菜单 ----
             "onboarding_open": self._onboarding_visible(),
             "tools_open": self.tools_open,
@@ -448,6 +462,9 @@ if __name__ == "__main__":
             f"{memory.primary_language or '未知语言'} · {len(memory.dependencies)} 个依赖")
         self.state.status_right = f"PawUI · {self.state.provider}/{self.state.model}"
         self.build_palette()
+        # 设置先作用（模型/字号），再上样式表，最后推一次状态
+        self._apply_settings()
+        self._apply_stylesheet()
         self.push()
         # 启动跨线程投递的抽水泵（工作线程的回调靠它回到 GUI 线程执行）
         self._start_gui_pump()
@@ -841,6 +858,10 @@ if __name__ == "__main__":
     tools_open = False
     tool_rows: tuple = ()
     tools_pick: str = ""
+    #: 应用设置（启动时从用户目录的配置文件读入；见 tcide/settings.py）
+    settings: Settings = None            # type: ignore[assignment]
+    _settings_open = False
+    _stylesheet_applied = False
 
     #: 工具菜单条目：显示文本 -> 处理键
     TOOL_ENTRIES: tuple[tuple[str, str], ...] = (
@@ -915,6 +936,178 @@ if __name__ == "__main__":
 
     def refresh_tools(self) -> None:
         self.tool_rows = tuple(label for label, _key in self.TOOL_ENTRIES)
+
+    # -- 设置面板 ---------------------------------------------------------
+    #
+    # 设计取舍：Segmented 这类控件的回调把值写进 ``self.settings``（内存），
+    # 保存时**再直接读**输入框/数字框的当前值 —— 两路都兜住，避免"界面改了但
+    # 存下去的是旧值"。设置本体（读写/校验/脱敏）在 ``tcide/settings.py``，
+    # 不依赖 Qt 也不依赖 PawUI，可离线测试。
+
+    def _apply_stylesheet(self) -> None:
+        """把 ``styles/app.qss`` **追加**到应用级样式表（不覆盖 PawUI 自己的）。
+
+        为什么用追加：PawUI 给部分组件设了内联样式（实测 14 处：Button / Input /
+        List / Table / Panel 头部…），内联在**同名属性**上优先级更高。所以全局
+        样式表只在它没定义的地方生效：页签、列表项状态、滚动条、分隔条、对话框、
+        聚焦环、提示气泡…… 这已足够把"默认 Qt 观感"变成有层次的深色界面。
+        """
+        root = getattr(self.runtime, "root", None)
+        if root is None or not hasattr(root, "findChild") or not APP_QSS_FILE.is_file():
+            return
+        try:
+            from PySide6.QtWidgets import QApplication
+
+            app = QApplication.instance()
+            if app is None:
+                return
+            app.setStyleSheet(app.styleSheet() + "\n"
+                              + APP_QSS_FILE.read_text(encoding="utf-8"))
+            self._stylesheet_applied = True
+        except Exception as exc:      # noqa: BLE001 - 样式失败不该影响功能
+            self._set_status(f"样式表加载失败：{type(exc).__name__}")
+
+    def _apply_settings(self) -> None:
+        """把设置作用到状态与界面上（模型 / 审查门 / 字号）。"""
+        settings = self.settings
+        self.state.provider = settings.provider
+        preset = PRESETS.get(settings.provider, PRESETS["deepseek"])
+        self.state.model = settings.model or preset.model
+        if settings.api_key:
+            self.state.api_key = settings.api_key
+        self.state.review_gate = bool(settings.review_gate)
+        try:
+            from PySide6.QtWidgets import QApplication
+
+            app = QApplication.instance()
+            if app is not None:
+                font = app.font()
+                font.setPointSize(int(settings.font_size))
+                app.setFont(font)
+        except Exception:      # noqa: BLE001 - 拿不到 QApplication 就跳过字号
+            pass
+
+    def settings_labels(self) -> dict:
+        """推给设置面板的控件值。"""
+        return {
+            "settings_open": self._settings_open,
+            "settings_provider": self.settings.provider,
+            "settings_api_key": self.settings.api_key,
+            "settings_model": self.settings.model,
+            "settings_timeout": int(self.settings.timeout),
+            "settings_font_size": str(self.settings.font_size),
+            "settings_compact_label": "开" if self.settings.compact else "关",
+            "settings_engine_label": "Monaco" if self.settings.monaco_enabled else "内置",
+            "settings_gate_label": "开" if self.settings.review_gate else "关",
+            "settings_restore_label": "开" if self.settings.restore_last_project else "关",
+            "settings_key_hint": (f"当前：{settings_summary(self.settings)}"
+                                  if self.settings.api_key else "当前未配置 Key"),
+        }
+
+    def cmd_settings_open(self, *_args) -> None:
+        self._settings_open = True
+        self._set_status("设置：改完按「保存」")
+        self.push()
+
+    def cmd_settings_close(self, *_args) -> None:
+        self._settings_open = False
+        self.push()
+
+    @staticmethod
+    def _on_off(value: str, default: bool = True) -> bool:
+        text = str(value).strip().lower()
+        if text in ("开", "on", "true", "yes", "1", "启用"):
+            return True
+        if text in ("关", "off", "false", "no", "0", "禁用"):
+            return False
+        return default
+
+    def on_settings_provider(self, value: str = "", *_args) -> None:
+        key = str(value).split(" · ")[0].strip().lower()
+        if key in PRESETS:
+            self.settings.provider = key
+        self.push()
+
+    def on_settings_timeout(self, value=None, *_args) -> None:
+        try:
+            self.settings.timeout = int(float(value))
+        except (TypeError, ValueError):
+            return
+        self.push()
+
+    def on_settings_font(self, value: str = "", *_args) -> None:
+        try:
+            self.settings.font_size = int(str(value).strip())
+        except ValueError:
+            return
+        self.push()
+
+    def on_settings_compact(self, value: str = "", *_args) -> None:
+        self.settings.compact = self._on_off(value, self.settings.compact)
+        self.push()
+
+    def on_settings_engine(self, value: str = "", *_args) -> None:
+        self.settings.monaco_enabled = "monaco" in str(value).lower()
+        self.push()
+
+    def on_settings_gate(self, value: str = "", *_args) -> None:
+        self.settings.review_gate = self._on_off(value, self.settings.review_gate)
+        self.state.review_gate = self.settings.review_gate
+        self.push()
+
+    def on_settings_restore(self, value: str = "", *_args) -> None:
+        self.settings.restore_last_project = self._on_off(
+            value, self.settings.restore_last_project)
+        self.push()
+
+    def on_settings_accept(self, *_args) -> None:
+        """保存：先读控件当前值，再与内存状态合并、校验、落盘。"""
+        settings = self.settings
+        settings.api_key = self._widget_text("set_api_key", settings.api_key)
+        settings.model = self._widget_text("set_model", settings.model)
+        text_timeout = self._widget_text("set_timeout", "")
+        if text_timeout:
+            try:
+                settings.timeout = int(float(text_timeout))
+            except ValueError:
+                pass
+        try:
+            # 注意 save_settings 返回的是**文件路径**，不是 Settings —— 别把路径
+            # 赋给 self.settings（第一版就这么写，后面 .provider 全炸，
+            # 还连累了后续的自检项）。
+            normalized = normalize_settings(settings)
+            save_settings(normalized)
+            self.settings = normalized
+        except Exception as exc:      # noqa: BLE001
+            self._settings_open = False
+            self._set_status(f"设置保存失败：{type(exc).__name__}: {exc}")
+            return self.push()
+        self._apply_settings()
+        self._settings_open = False
+        self._set_status(f"设置已保存：{settings_path()}")
+        self._append_chat("·", f"设置已更新：{settings_summary(self.settings)}")
+        self.push()
+
+    def _widget_text(self, name: str, default: str = "") -> str:
+        """按 id 读控件当前值（输入框 / 下拉 / 数字框都试一遍）。"""
+        root = getattr(self.runtime, "root", None)
+        if root is None or not hasattr(root, "findChild"):
+            return default
+        try:
+            from PySide6.QtWidgets import QComboBox, QLineEdit, QSpinBox
+
+            widget = root.findChild(QLineEdit, name)
+            if widget is not None:
+                return widget.text()
+            combo = root.findChild(QComboBox, name)
+            if combo is not None:
+                return combo.currentText()
+            spin = root.findChild(QSpinBox, name)
+            if spin is not None:
+                return str(spin.value())
+        except Exception:      # noqa: BLE001
+            pass
+        return default
 
     def cmd_tools_open(self, *_args) -> None:
         """打开工具菜单：把原先藏在命令面板里的能力提到界面。"""
@@ -1800,6 +1993,7 @@ if __name__ == "__main__":
             "打开 Web 编辑器（独立窗口）",
             "打开终端（独立窗口）",
             "工具菜单（Web 编辑器/终端/分屏/LSP/检查）",
+            "设置（模型 / 界面 / 行为）",
             "新建示例文件并打开",
             "分屏打开下一个标签（只读参考）",
             "关闭分屏",
@@ -1856,6 +2050,7 @@ if __name__ == "__main__":
             ("打开 Web 编辑器", self.cmd_open_web_editor),
             ("打开终端", self.cmd_open_terminal),
             ("工具菜单", self.cmd_tools_open),
+            ("设置", self.cmd_settings_open),
             ("新建示例文件", self.cmd_open_sample),
             ("分屏打开下一个标签", self.cmd_split_open),
             ("关闭分屏", self.cmd_split_close),
