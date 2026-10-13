@@ -26,7 +26,7 @@
       <Button on_click="cmd_tools_open">工具 ▾</Button>
       <Button on_click="cmd_settings_open" id="btn_settings">设置</Button>
       <Button on_click="cmd_run_tests">跑测试</Button>
-      <Button on_click="cmd_review_toggle" id="btn_review">{$review_label}</Button>
+      <Button on_click="cmd_review_toggle" id="btn_review">权限：{$permission_label}</Button>
       <Spacer/>
       <Text color="subtext" size="12">模型</Text>
       <Select id="provider" items="{$provider_items}" value="{$provider}" on_change="on_provider_change" width="150"/>
@@ -172,6 +172,10 @@
       <Text color="subtext" size="12">{$status_left}</Text>
       <Badge text="{$review_badge}" bg="{$review_badge_color}"/>
       <Spacer/>
+      <!-- 权限三档：随时可切（三个参照产品都是档位而不是开关） -->
+      <Text color="subtext" size="12">权限</Text>
+      <Segmented id="permission" items="{$permission_items}"
+                 value="{$permission_label}" on_change="on_permission_change"/>
       <Text color="subtext" size="12">{$status_right}</Text>
     </Row>
 
@@ -349,6 +353,9 @@ diff_text = ""
 diff_stats = ""
 diff_hint = ""
 review_label = "审查门：开"
+permission_label = "逐次确认"
+permission_items = ["只读", "逐次确认", "自动"]
+permission_note = "逐次确认：AI 的写操作先进入审核队列"
 review_badge = "待审核 0"
 review_badge_color = "border"
 search_rows = []

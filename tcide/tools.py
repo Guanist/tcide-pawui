@@ -112,6 +112,14 @@ def truncate_output(text: str, limit: int) -> tuple[str, bool]:
 
 
 class ToolRegistry:
+    """工具注册表。
+
+    ``policy`` 由界面注入（见 tcide/permissions.py）：为 ``None`` 时不做权限
+    拦截，等价于"全部放行"（库本身不假设一定要有权限模型）。
+    """
+
+    policy: "PermissionPolicy | None" = None
+
     """注册/发现/调用工具。"""
 
     def __init__(
@@ -161,6 +169,15 @@ class ToolRegistry:
             record["ok"] = False
             self.calls.append(record)
             return ToolResult(ok=False, error=f"未知工具: {name}（可用: {self.names()}）")
+        # 权限兜底：拦在**所有工具调用的唯一咽喉**上（agent 有多条路径，
+        # 散着判迟早漏一条）。只读档下写/执行直接拒绝 —— fail closed。
+        decision = self.policy.decide(name) if self.policy else None
+        if decision is not None and decision.denied:
+            record["ok"] = False
+            record["denied"] = True
+            record["reason"] = decision.reason
+            self.calls.append(record)
+            return ToolResult(ok=False, error=decision.reason)
         try:
             result = spec.handler(**arguments)
         except TypeError as exc:

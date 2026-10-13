@@ -20,6 +20,8 @@ import os
 import pathlib
 from dataclasses import asdict, dataclass, field, replace
 
+from tcide.permissions import normalize_level
+
 #: 支持的服务商（与 tcide/models.py 的预设保持一致，另加"自定义"）
 PROVIDERS = ("deepseek", "ark", "ollama", "anthropic", "openai", "custom")
 
@@ -50,7 +52,10 @@ class Settings:
     monaco_enabled: bool = True     # 关掉则退回内置编辑器（省内存）
 
     # -- 行为 --
-    review_gate: bool = True        # AI 写操作是否需要人工审核
+    review_gate: bool = True        # 旧字段：等价于 permission="ask"/"auto"（见下）
+    #: 权限档位：``read_only`` 只读 / ``ask`` 逐次确认 / ``auto`` 自动
+    #: （三档的设计依据见 tcide/permissions.py 的模块说明）
+    permission: str = "ask"
     restore_last_project: bool = True
     run_tests_on_save: bool = False
     telemetry: bool = False         # 默认关：本项目不收集任何数据
@@ -90,10 +95,15 @@ def normalize(settings: Settings) -> Settings:
     theme = (settings.theme or "dark").strip().lower()
     if theme not in ("dark", "light"):
         theme = "dark"
+    permission = normalize_level(settings.permission,
+                                 fallback=("auto" if not settings.review_gate
+                                           else "ask"))
     return replace(
         settings,
         provider=provider,
         theme=theme,
+        permission=permission,
+        review_gate=(permission != "auto"),
         model=(settings.model or "").strip(),
         api_key=(settings.api_key or "").strip(),
         base_url=(settings.base_url or "").strip().rstrip("/"),

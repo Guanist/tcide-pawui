@@ -58,6 +58,7 @@ from tcide.diff import ReviewSession, ReviewingWorkspace
 from tcide.memory import ProjectMemoryBuilder
 from tcide.models import PRESETS, ChatResponse, ModelConfig, ModelError
 from tcide import theme as tiger_theme
+from tcide.permissions import LABELS, LEVELS, PermissionPolicy
 from tcide.settings import (Settings, config_path as settings_path,
                             load as load_settings, normalize as normalize_settings,
                             save as save_settings, summary as settings_summary)
@@ -156,6 +157,8 @@ class AppState:
     dock_open: bool = True
 
     provider: str = "deepseek"
+    #: 权限档位（只读 / 逐次确认 / 自动），界面用 {$permission_label} 显示
+    permission: str = "ask"
     model: str = ""
     api_key: str = ""
     status_left: str = "就绪"
@@ -371,6 +374,7 @@ if __name__ == "__main__":
             "cmd_settings_open", "cmd_settings_close", "on_settings_accept",
             "on_settings_provider", "on_settings_timeout", "on_settings_font",
             "on_settings_compact", "on_settings_engine", "on_settings_gate",
+            "on_permission_change",
             "on_settings_restore", "on_settings_theme",
             "on_onboarding_toggle",
             "cmd_split_open", "cmd_split_close",
@@ -910,6 +914,10 @@ if __name__ == "__main__":
     _stylesheet_applied = False
     #: 当前主题（dark = 黑橙 / light = 白橙）
     _theme_name = "dark"
+    #: 权限策略的**类级默认值**：settings_labels() 可能在 bootstrap() 之前被
+    #: 调用（测试会提前 push()），没有默认值就 AttributeError。这里只做默认，
+    #: 切档时是整体替换而不是就地修改，所以多实例共享该对象无副作用。
+    permission = PermissionPolicy("ask")
     #: PawUI 自己那份应用级样式表（切换主题时以它为基底重新拼接）
     _base_stylesheet: str | None = None
 
@@ -1085,7 +1093,12 @@ if __name__ == "__main__":
         self.state.model = settings.model or preset.model
         if settings.api_key:
             self.state.api_key = settings.api_key
-        self.state.review_gate = bool(settings.review_gate)
+        # 权限三档（只读 / 逐次确认 / 自动）：策略接到工具注册表的唯一咽喉上，
+        # 同时决定 agent 是否把写操作排队等审核
+        self.permission = PermissionPolicy(settings.permission)
+        self.state.permission = self.permission.level
+        self.state.tools.policy = self.permission
+        self.state.review_gate = self.permission.review_gate_enabled
         # 主题（深色黑橙 / 浅色白橙）—— 会在 _apply_stylesheet 里一起生效
         self.apply_theme(settings.theme)
         try:
@@ -1112,7 +1125,10 @@ if __name__ == "__main__":
                                                            "深色（黑橙）"),
             "settings_compact_label": "开" if self.settings.compact else "关",
             "settings_engine_label": "Monaco" if self.settings.monaco_enabled else "内置",
-            "settings_gate_label": "开" if self.settings.review_gate else "关",
+            "settings_gate_label": self.permission.label,
+            "permission_label": self.permission.label,
+            "permission_note": self.permission.describe(),
+            "permission_items": [LABELS[key] for key in LEVELS],
             "settings_restore_label": "开" if self.settings.restore_last_project else "关",
             "settings_key_hint": (f"当前：{settings_summary(self.settings)}"
                                   if self.settings.api_key else "当前未配置 Key"),
@@ -1179,8 +1195,8 @@ if __name__ == "__main__":
         self.push()
 
     def on_settings_gate(self, value: str = "", *_args) -> None:
-        self.settings.review_gate = self._on_off(value, self.settings.review_gate)
-        self.state.review_gate = self.settings.review_gate
+        self.settings.permission = self.settings.permission  # 旧的开/关已由档位取代
+        self._set_permission(value)
         self.push()
 
     def on_settings_restore(self, value: str = "", *_args) -> None:
@@ -1375,7 +1391,8 @@ if __name__ == "__main__":
             context=ProjectMemoryBuilder.to_markdown(
                 ProjectMemoryBuilder(self.state.workspace).build()),
             max_parallel_coders=2, max_coder_retry=1,
-            review_gate_enabled=True, on_event=self._on_agent_event)
+            review_gate_enabled=self.permission.review_gate_enabled,
+                        on_event=self._on_agent_event)
 
     def _on_agent_event(self, event: AgentEvent) -> None:
         # 像素宠物跟着编排状态走（9 状态机在 tcide/pet.py 里，可离线测试）。
@@ -1467,12 +1484,37 @@ if __name__ == "__main__":
                 f"也可以用「只接受第一个改动块」做部分接受")
 
     def cmd_review_toggle(self, *_args) -> None:
-        """开关审查门：关掉之后 Agent 的写操作直接落盘。"""
-        self.review_enabled = not self.review_enabled
-        self.tool_workspace.enabled = self.review_enabled
-        self._append_chat("·", f"审查门 {'开启' if self.review_enabled else '关闭'}"
-                              f"（Agent 写操作将{'先进入审核' if self.review_enabled else '直接落盘'}）")
+        """工具栏按钮：在三档之间循环（只读 → 逐次确认 → 自动 → 只读）。
+
+        历史上这里是"审查门"开关，还同时维护 ``self.review_enabled`` 与
+        ``self.tool_workspace.enabled`` 两个并存的标志（同一个概念两套开关，
+        迟早漂移）。现在统一由 :class:`tcide.permissions.PermissionPolicy` 决定。
+        """
+        self._set_permission(self.permission.next_level())
+
+    def _set_permission(self, level: str) -> None:
+        """切档并让**所有**把关点与之一致（工具注册表 + 审核工作区 + agent）。"""
+        self.permission = PermissionPolicy(level)
+        self.settings.permission = self.permission.level
+        self.settings.review_gate = self.permission.review_gate_enabled
+        self.state.permission = self.permission.level
+        self.state.tools.policy = self.permission          # 唯一咽喉处的兜底拦截
+        self.state.review_gate = self.permission.review_gate_enabled
+        self.review_enabled = self.permission.review_gate_enabled
+        self.tool_workspace.enabled = self.permission.review_gate_enabled
+        self._set_status(f"权限：{self.permission.label} —— {self.permission.describe()}")
         self.push()
+
+    def on_permission_change(self, value: str = "", *_args) -> None:
+        """状态栏三段选择器（界面传的是显示名，这里映射回档位）。"""
+        text = str(value).strip()
+        level = next((key for key, label in LABELS.items() if label == text), text)
+        self._set_permission(level)
+        # 立即落盘：权限是"这台机器上我能放手到什么程度"，不该等用户再点保存
+        try:
+            self.settings = save_settings(normalize_settings(self.settings))
+        except Exception:      # noqa: BLE001 - 存不下也不该拦住切档
+            pass
 
     def cmd_review_open(self, *_args) -> None:
         """打开审核弹窗（没有待审核内容时也提示一下，避免看起来像没反应）。"""

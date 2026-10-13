@@ -576,6 +576,46 @@ def _run_checks(runtime, app, qapp) -> list[Check]:
 
     check("主题切换：浅色（白橙）与切回深色", theme_switch)
 
+    def permission_levels() -> tuple[bool, str]:
+        """权限三档：切档后**工具注册表真的会拦**（不是只改了文案）。
+
+        三个参照产品（Codex / DeepSeek Harness / Trae）都把"AI 能自己动多少手"
+        做成可切档位；这里验证我们的实现是真拦截：只读档下写文件必须被拒且
+        文件确实没被写出来。
+        """
+        import pathlib
+        import tempfile
+
+        from tcide.permissions import PermissionPolicy
+        from tcide.tools import ToolRegistry
+        from tcide.workspace import Workspace
+
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Workspace(tmp)
+            registry = ToolRegistry(workspace)
+
+            registry.policy = PermissionPolicy("read_only")
+            denied = registry.call("write_file", {"path": "x.txt", "content": "1"})
+            if denied.ok or (pathlib.Path(tmp) / "x.txt").exists():
+                return False, "只读档下写文件竟然成功了（拦截无效）"
+
+            registry.policy = PermissionPolicy("ask")
+            if not registry.call("write_file", {"path": "y.txt", "content": "2"}).ok:
+                return False, "逐次确认档下写文件被误拦（该由审核队列负责）"
+
+        # 再验证应用侧切档确实把策略接到了同一条咽喉上
+        app._set_permission("read_only")
+        pump()
+        if app.state.tools.policy.level != "read_only":
+            return False, "切档后工具注册表的策略没跟着变"
+        if app.permission.label != "只读":
+            return False, f"状态栏档位标签不对：{app.permission.label!r}"
+        app._set_permission("ask")
+        pump()
+        return True, "只读档拦截生效、逐次确认档放行、状态与策略一致"
+
+    check("权限三档：只读真的拦住写操作", permission_levels)
+
     def sample_file() -> tuple[bool, str]:
         """「新建示例文件并打开」：真的建出来、真的打开、**用完删掉**。
 

@@ -43,7 +43,7 @@ class TestRoundTrip:
     def test_save_then_load(self, isolated):
         original = Settings(provider="anthropic", model="claude-x",
                             api_key="sk-abcdefghijk", timeout=90, font_size=15,
-                            review_gate=False, compact=True)
+                            permission="auto", compact=True)
         path = save(original)
         assert path.is_file()
         loaded = load()
@@ -52,6 +52,9 @@ class TestRoundTrip:
         assert loaded.api_key == "sk-abcdefghijk"
         assert loaded.timeout == 90
         assert loaded.font_size == 15
+        # 权限三档取代了原来的二元 review_gate：档位是权威，review_gate 由它派生
+        # （auto 档 = 不审核）。所以这里断言档位，并顺带确认派生值一致。
+        assert loaded.permission == "auto"
         assert loaded.review_gate is False
         assert loaded.compact is True
 
