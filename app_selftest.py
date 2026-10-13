@@ -616,6 +616,46 @@ def _run_checks(runtime, app, qapp) -> list[Check]:
 
     check("权限三档：只读真的拦住写操作", permission_levels)
 
+    def changes_tab() -> tuple[bool, str]:
+        """「变更」页签：提案 → 出现在清单 → 逐文件驳回 → 清单清空且文件未落盘。
+
+        **不碰项目文件**：用一个不存在的临时路径提案，最后走"驳回"（丢弃），
+        所以自检结束后工作区应当与开始时一致。
+        """
+        probe = ".selftest-changes.tmp"
+        try:
+            app.review.propose(probe, "自检用内容", source="selftest")
+            app.refresh_changes()
+            pump()
+            if not app.state.changes_rows:
+                return False, "提案后「变更」页签里没有内容"
+            if probe not in app.state.changes_paths.values():
+                return False, f"清单里没有 {probe}：{list(app.state.changes_paths.values())}"
+            if "1 个文件" not in app.state.changes_summary:
+                return False, f"汇总不对：{app.state.changes_summary!r}"
+
+            app._changes_pick = probe
+            app.cmd_change_reject()
+            pump()
+            # 两个坑（都踩过）：
+            # 1. 不能断言"清单为空" —— 驳回后清单会**回退显示工作区状态**
+            #    （设计如此：待审提案优先，其次是工作区改动）；
+            # 2. 不能用 ``get(path)`` 判断是否还是待审 —— reject() 只是把提案
+            #    标记为 rejected（保留审计轨迹），get() 仍会返回它。要用 pending()。
+            if any(item.path == probe for item in app.review.pending()):
+                return False, f"驳回后 {probe} 仍是待审提案"
+            if app.state.workspace.exists(probe):
+                return False, f"{probe} 竟然被写进了工作区（驳回应该是丢弃）"
+            return True, "提案入清单、汇总计数正确、逐文件驳回后未落盘"
+        finally:
+            try:
+                if app.review.get(probe) is not None:
+                    app.review.reject(probe)
+            except Exception:      # noqa: BLE001
+                pass
+
+    check("变更页签：提案 → 清单 → 逐文件驳回", changes_tab)
+
     def sample_file() -> tuple[bool, str]:
         """「新建示例文件并打开」：真的建出来、真的打开、**用完删掉**。
 

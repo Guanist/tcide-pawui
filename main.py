@@ -58,6 +58,7 @@ from tcide.diff import ReviewSession, ReviewingWorkspace
 from tcide.memory import ProjectMemoryBuilder
 from tcide.models import PRESETS, ChatResponse, ModelConfig, ModelError
 from tcide import theme as tiger_theme
+from tcide.changes import ChangeSummary
 from tcide.permissions import LABELS, LEVELS, PermissionPolicy
 from tcide.settings import (Settings, config_path as settings_path,
                             load as load_settings, normalize as normalize_settings,
@@ -159,6 +160,11 @@ class AppState:
     provider: str = "deepseek"
     #: 权限档位（只读 / 逐次确认 / 自动），界面用 {$permission_label} 显示
     permission: str = "ask"
+    #: 「变更」页签：本轮/工作区改了哪些文件（见 tcide/changes.py）
+    changes_rows: list[str] = field(default_factory=list)
+    changes_paths: dict[str, str] = field(default_factory=dict)
+    changes_summary: str = "本轮没有文件变更"
+    changes_hint: str = ""
     model: str = ""
     api_key: str = ""
     status_left: str = "就绪"
@@ -375,6 +381,8 @@ if __name__ == "__main__":
             "on_settings_provider", "on_settings_timeout", "on_settings_font",
             "on_settings_compact", "on_settings_engine", "on_settings_gate",
             "on_permission_change",
+            "on_change_select", "cmd_change_accept", "cmd_change_reject",
+            "cmd_changes_accept_all", "cmd_changes_reject_all", "cmd_show_changes",
             "on_settings_restore", "on_settings_theme",
             "on_onboarding_toggle",
             "cmd_split_open", "cmd_split_close",
@@ -1129,6 +1137,10 @@ if __name__ == "__main__":
             "permission_label": self.permission.label,
             "permission_note": self.permission.describe(),
             "permission_items": [LABELS[key] for key in LEVELS],
+            "changes_rows": list(self.state.changes_rows),
+            "changes_summary": self.state.changes_summary,
+            "changes_hint": self.state.changes_hint,
+            "changes_paths": dict(self.state.changes_paths),
             "settings_restore_label": "开" if self.settings.restore_last_project else "关",
             "settings_key_hint": (f"当前：{settings_summary(self.settings)}"
                                   if self.settings.api_key else "当前未配置 Key"),
@@ -1306,10 +1318,11 @@ if __name__ == "__main__":
         self._set_status("已刷新文件树与 Git 状态")
         self.push()
 
-    def _select_dock_tab(self, index: int) -> bool:
-        """切换底部面板的页签（引导用：把 AI 对话切到前面）。
+    def _select_dock_tab(self, index: "int | str") -> bool:
+        """切换底部面板的页签（页码或标签都行）。
 
-        PawUI 的 `<Tabs>` 就是 QTabWidget；拿不到控件时**静默降级**（只提示），
+        传**标签**（如 ``"变更"``）比传索引稳：索引一旦随页签增删而变，就会静默切错
+        页签。PawUI 的 `<Tabs>` 就是 QTabWidget；拿不到控件时**静默降级**（只提示），
         不因为一个锦上添花的动作把界面搞崩。
         """
         if self.runtime is None:
@@ -1323,7 +1336,12 @@ if __name__ == "__main__":
             widget = root.findChild(QTabWidget, "dock_tabs")
             if widget is None:
                 return False
-            widget.setCurrentIndex(max(0, min(int(index), widget.count() - 1)))
+            position = index
+            if isinstance(index, str):
+                position = next(
+                    (spot for spot in range(widget.count())
+                     if str(index) in widget.tabText(spot)), 0)
+            widget.setCurrentIndex(max(0, min(int(position), widget.count() - 1)))
             return True
         except Exception:      # noqa: BLE001
             return False
@@ -1522,6 +1540,80 @@ if __name__ == "__main__":
         self.diff_open = True
         if not self.review.pending():
             self._set_status("没有待审核的改动")
+        self.push()
+
+    # -- 「变更」页签：每轮变更清单与逐文件审查 -------------------------
+    #
+    # 依据：Codex 的 review pane、DeepSeek Harness 的 changes-review、
+    # Trae 的代码变更面板都在解决"AI 改了一堆，人无从复核"。
+
+    def refresh_changes(self) -> None:
+        """重建「变更」页签的内容（待审核提案优先，其次是工作区状态）。"""
+        pending = list(self.review.pending())
+        summary = ChangeSummary.from_proposals(pending)
+        if summary.is_empty:
+            try:
+                summary = ChangeSummary.from_status(self.state.repo.status())
+            except Exception:      # noqa: BLE001 - git 不可用时也不该炸
+                summary = ChangeSummary()
+        self.state.changes_rows = summary.labels()
+        self.state.changes_paths = {label: path for label, path
+                                   in zip(summary.labels(), summary.paths())}
+        self.state.changes_summary = summary.summary()
+        self.state.changes_hint = summary.hint(reviewed=bool(pending))
+        self._changes_summary = summary
+
+    def _selected_change(self) -> str:
+        """当前选中的变更文件（没选就取第一个，避免"点了没反应"）。"""
+        paths = list(self.state.changes_paths.values())
+        if not paths:
+            return ""
+        picked = str(getattr(self, "_changes_pick", "") or "")
+        return picked if picked in paths else paths[0]
+
+    def on_change_select(self, row: str = "", *_args) -> None:
+        self._changes_pick = self.state.changes_paths.get(str(row), "")
+        self.push()
+
+    def cmd_change_accept(self, *_args) -> None:
+        path = self._selected_change()
+        if not path:
+            self._set_status("没有待接受的变更")
+            return self.push()
+        if self.review.get(path) is None:
+            # 不是 AI 的提案（可能是人自己改的）→ 无处可"接受"，如实说明
+            self._set_status(f"{path} 是工作区改动，不是待审提案（无需接受）")
+            return self.push()
+        self.review.accept(path)
+        self._after_review(path, f"已接受 {path}")
+
+    def cmd_change_reject(self, *_args) -> None:
+        path = self._selected_change()
+        if not path:
+            self._set_status("没有待驳回的变更")
+            return self.push()
+        if self.review.get(path) is None:
+            self._set_status(f"{path} 是工作区改动，不是待审提案（无从驳回）")
+            return self.push()
+        self.review.reject(path)
+        self._after_review(path, f"已驳回 {path}")
+
+    def cmd_changes_accept_all(self, *_args) -> None:
+        accepted = 0
+        for path in list(self.state.changes_paths.values()):
+            if self.review.get(path) is not None:
+                self.review.accept(path)
+                accepted += 1
+        self._after_review(None, f"已接受全部 {accepted} 个文件的改动")
+
+    def cmd_changes_reject_all(self, *_args) -> None:
+        count = self.review.reject()
+        self._after_review(None, f"已驳回 {count} 处改动")
+
+    def cmd_show_changes(self, *_args) -> None:
+        """切到「变更」页签（agent 跑完自动调用 —— 这就是"实时跟随"）。"""
+        self.refresh_changes()
+        self._select_dock_tab("变更")
         self.push()
 
     def cmd_diff_next(self, *_args) -> None:
@@ -2155,9 +2247,23 @@ if __name__ == "__main__":
         self._post_to_gui(self._finish_online_run, outcome)
 
     def _finish_online_run(self, outcome: str) -> None:
-        """**GUI 线程**：写入对话并刷新界面。"""
+        """**GUI 线程**：写入对话并刷新界面，并留下一张"本轮变更卡"。"""
         self._append_chat("TCIDE", outcome)
+        self._report_changes_after_run()
         self._end_busy()
+
+    def _report_changes_after_run(self) -> None:
+        """把"这一轮改了什么"写进对话，并把界面切到「变更」页签。
+
+        参照 Trae 的"实时跟随"：AI 干完活后，用户眼前应该**直接是**变更清单，
+        而不是让他自己去翻。
+        """
+        self.refresh_changes()
+        summary = self._changes_summary
+        if summary.is_empty:
+            return
+        self._append_chat("·", f"{summary.summary()} —— 见底部「变更 ✎」页签，可逐文件接受/驳回")
+        self._select_dock_tab("变更")
 
     def cmd_clear_chat(self, *_args) -> None:
         self.state.chat_log = "_（已清空）_\n"

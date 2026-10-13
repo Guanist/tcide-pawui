@@ -139,7 +139,22 @@
                             height="170" font="Consolas"/>
                 </Column>
               </Tab>
-              <Tab label="AI 对话">
+              <Tab label="变更 ✎">
+        <Column gap="6">
+          <Text size="12" bold="true">{$changes_summary}</Text>
+          <List id="changes_list" items="{$changes_rows}"
+                on_select="on_change_select" height="150"/>
+          <Text color="subtext" size="11">{$changes_hint}</Text>
+          <Row gap="8">
+            <Button on_click="cmd_change_accept">接受选中</Button>
+            <Button on_click="cmd_change_reject">驳回选中</Button>
+            <Button on_click="cmd_changes_accept_all">全部接受</Button>
+            <Button on_click="cmd_changes_reject_all">全部驳回</Button>
+          </Row>
+        </Column>
+      </Tab>
+
+      <Tab label="AI 对话">
                 <Column gap="6">
                   <Markdown>{$chat_log}</Markdown>
                   <Input id="chat_input" placeholder="描述你要做的事，回车交给 Builder/Coder"
@@ -354,6 +369,10 @@ diff_stats = ""
 diff_hint = ""
 review_label = "审查门：开"
 permission_label = "逐次确认"
+changes_rows = []
+changes_summary = "本轮没有文件变更"
+changes_paths = {}
+changes_hint = "还没有待审阅的改动。让 AI 改点东西，这里会出现逐文件清单。"
 permission_items = ["只读", "逐次确认", "自动"]
 permission_note = "逐次确认：AI 的写操作先进入审核队列"
 review_badge = "待审核 0"
