@@ -160,6 +160,10 @@ class AppState:
     api_key: str = ""
     status_left: str = "就绪"
     status_right: str = ""
+    #: 是否正在跑长任务 —— 界面据此显示 Spinner。
+    #: 以前"AI 在跑 / 测试在跑"只有状态栏一行小字，用户看不出还在不在干活。
+    busy: bool = False
+    busy_label: str = ""
     project_line: str = ""
     mode_label: str = "离线"
     history: list[str] = field(default_factory=list)
@@ -209,6 +213,45 @@ if __name__ == "__main__":
     def _set_status(self, message: str) -> None:
         """更新状态栏左侧文字（界面用 ``{$status_left}`` 显示）。"""
         self.state.status_left = message
+
+    def _begin_busy(self, label: str = "处理中…") -> None:
+        """标记"正在跑长任务"：界面会显示一个 Spinner + 标签。
+
+        参照 Trae 的"任务状态通知"与 SOLO 的"实时跟随"：长任务必须在界面上
+        **可见地在跑**，否则用户不知道程序还活着（这正是他们抱怨"AI 在黑盒里
+        干活"的根源）。
+        """
+        self.state.busy = True
+        self.state.busy_label = label
+        self.state.status_left = label
+        self.push()
+
+    def _end_busy(self, message: str = "") -> None:
+        """清除忙碌标记（可选地同时更新状态文字）。"""
+        self.state.busy = False
+        self.state.busy_label = ""
+        if message:
+            self.state.status_left = message
+        self.push()
+
+    def _run_async(self, work, done, *args, label: str = "处理中…") -> None:
+        """在**后台线程**跑 ``work``，结果经 ``done`` 投递回 GUI 线程。
+
+        为什么要统一走这里：``cmd_run_tests`` 第一版是**同步**执行测试命令
+        （超时 300 秒），跑起来窗口整个**卡死**。凡是可能超过几百毫秒的活，
+        都必须离开 GUI 线程 —— 并且让忙碌指示可见。
+        """
+        self._begin_busy(label)
+
+        def runner() -> None:
+            try:
+                result = work(*args)
+            except Exception as exc:      # noqa: BLE001 - 失败也要解除忙碌
+                self._post_to_gui(self._end_busy, f"失败：{type(exc).__name__}: {exc}")
+                return
+            self._post_to_gui(done, result)
+
+        threading.Thread(target=runner, daemon=True).start()
 
     def refresh_file(self, path: str) -> None:
         """把磁盘上的内容重新读进编辑器（审核接受/驳回后同步显示）。"""
@@ -388,6 +431,8 @@ if __name__ == "__main__":
             "mode_label": "在线" if state.api_key else "离线",
             "status_left": state.status_left,
             "status_right": state.status_right,
+            "busy": state.busy,
+            "busy_label": state.busy_label,
             "pet_label": self.pet.snapshot().label,
             # ---- Diff 审核（补回原版丢失的 acceptDiff）----
             "review_label": "审查门：开" if self.review_enabled else "审查门：关",
@@ -1268,17 +1313,31 @@ if __name__ == "__main__":
             return False
 
     def cmd_run_tests(self, *_args) -> None:
-        """跑项目测试命令（从项目记忆里取）。"""
+        """跑项目测试命令（从项目记忆里取）。
+
+        **异步执行**：第一版是同步调用工具（超时 300 秒），跑测试时整个窗口卡死 ——
+        用户既看不到进度也无法取消。现在放到后台线程，状态栏显示 Spinner，
+        结果回到 GUI 线程再刷新。
+        """
         memory = ProjectMemoryBuilder(self.state.workspace).build()
         command = memory.test_command
         if not command:
             self.log("没有检测到测试命令（可在 CLAUDE.md/清单文件里声明）")
             return
-        result = self.state.tools.call("run_command",
-                                       {"command": command, "timeout": 300})
+        self.log(f"$ {command}")
+        self._run_async(self._run_test_command, self._finish_run_tests, command,
+                        label=f"测试运行中：{command}")
+
+    def _run_test_command(self, command: str):
+        """**工作线程**：只执行命令，不碰界面。"""
+        return command, self.state.tools.call("run_command",
+                                              {"command": command, "timeout": 300})
+
+    def _finish_run_tests(self, payload) -> None:
+        """**GUI 线程**：把测试结果写进终端并解除忙碌。"""
+        command, result = payload
         self.set_terminal(f"$ {command}\n\n{result.output or result.error}")
-        self.state.status_left = f"测试{'通过' if result.ok else '失败'}：{command}"
-        self.push()
+        self._end_busy(f"测试{'通过' if result.ok else '失败'}：{command}")
 
     # -- 终端 -------------------------------------------------------------
 
@@ -1982,6 +2041,7 @@ if __name__ == "__main__":
 
         self._send_to_terminal(encode_output(lines, echo=text))
         self._send_to_terminal({"type": "prompt", "prompt": self._term_prompt()})
+        self._end_busy()
 
     def _term_prompt(self) -> str:
         from tcide.term import format_prompt
@@ -2016,9 +2076,9 @@ if __name__ == "__main__":
                                    "（未调用任何模型 API，也未修改任何文件）")
 
     def cmd_agent_dry_run(self, *_args) -> None:
+        self._begin_busy("离线演练中…")
         self._offline_run("（离线演练）")
-        self.state.status_left = "离线演练完成"
-        self.push()
+        self._end_busy("离线演练完成")
 
     def on_chat_send(self, text: str = "", *_args) -> None:
         requirement = str(text).strip()
@@ -2030,7 +2090,7 @@ if __name__ == "__main__":
             self.push()
             return
         self._append_chat("TCIDE", "正在调用模型（在线模式）…")
-        self.push()
+        self._begin_busy("模型调用中（在线模式）…")
         threading.Thread(target=self._online_run, args=(requirement,),
                          daemon=True).start()
 
@@ -2055,7 +2115,7 @@ if __name__ == "__main__":
     def _finish_online_run(self, outcome: str) -> None:
         """**GUI 线程**：写入对话并刷新界面。"""
         self._append_chat("TCIDE", outcome)
-        self.push()
+        self._end_busy()
 
     def cmd_clear_chat(self, *_args) -> None:
         self.state.chat_log = "_（已清空）_\n"
