@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """IDE 外壳的离屏界面测试。
 
 `shell_selftest` 里的检查项与 `python main.py --selftest` **完全同一套**，

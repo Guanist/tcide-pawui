@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """最小探针：冻结后的 PySide6 到底能不能跑。
 
 用来把两类问题分开：

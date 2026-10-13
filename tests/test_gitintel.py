@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """gitintel.py 的测试（变更聚类 / 风险 / 提交建议 / 热点）。"""
 
 from __future__ import annotations

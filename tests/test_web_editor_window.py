@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Web 编辑器（独立窗口）的实测测试。
 
 **为什么单独一个文件**：QtWebEngine 必须离屏 + 一套 Chromium 开关才能跑，

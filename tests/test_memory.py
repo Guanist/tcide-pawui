@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """memory.py 的测试（项目探测 / 静态上下文档 / 规则注入）。"""
 
 from __future__ import annotations

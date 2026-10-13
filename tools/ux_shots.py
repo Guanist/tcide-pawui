@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """给新界面（P0 体验改进）抓一组实拍图，便于对比"改之前/改之后"。
 
 用法：``python tools/ux_shots.py``（真实平台，中文正常）

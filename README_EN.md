@@ -36,7 +36,7 @@ Here it is 57 real snippets.
 ## Quick start
 
 ```bash
-# 1) dependencies (PawUI is GPL-3.0, PySide6 is LGPL-3.0)
+# 1) dependencies (PawUI and PySide6 are both LGPL-3.0)
 pip install PySide6 "pawui>=0.1.1"
 
 # 2) run the IDE against the current directory
@@ -174,22 +174,22 @@ python main.py --selftest
 
 ## License
 
-Split licensing, because the PawUI dependency is GPL-3.0 (declared as
-`GPL-3.0-or-later` in its `pyproject.toml`), and the GPL requires the **combined
-work** to be GPL:
+The whole repository is **LGPL-3.0-or-later**. It used to be split-licensed
+(LGPL library + GPL app) because PawUI was GPL-3.0 back then; **PawUI has since
+moved to LGPL-3.0-or-later** (`license = "LGPL-3.0-or-later"` in its
+`pyproject.toml`, full Lesser text in its LICENSE), so the split is no longer needed:
 
 | Part | License | Notes |
 |---|---|---|
-| `tcide/` (28 files) | **LGPL-3.0-or-later** | reusable library that does not depend on PawUI; see [`tcide/LICENSE`](tcide/LICENSE) |
-| `main.py` / `app_selftest.py` / `app.paw` / `tools/` / `tests/` | **GPL-3.0-or-later** | links GPL PawUI, so the combined work must be GPL; see [`LICENSE`](LICENSE) |
+| Everything (`tcide/`, `main.py`, `app_selftest.py`, `app.paw`, `tools/`, `tests/`) | **LGPL-3.0-or-later** | see [`LICENSE`](LICENSE) (the same LGPL-3.0 text PawUI ships) |
 
 Every source file carries an **SPDX identifier** (written idempotently by
-`tools/apply_licenses.py`, which also verifies the license texts are byte-identical
-to authoritative local copies).
+`tools/apply_licenses.py`, which also verifies LICENSE is the full LGPL-3.0 text).
 
 The `tcide/` boundary is enforced by tests — break it and CI fails:
 
-- `test_package_does_not_import_pawui` — the library must not depend on GPL PawUI
+- `test_package_does_not_import_pawui` — the library must not depend on PawUI
+  (no longer a licensing requirement, but it keeps `tcide/` reusable and testable offline)
 - `test_package_does_not_import_qt_at_module_level` — the library must not pull the UI
   stack in at import time (the PySide6 use in `tcide/web/bridge.py` is a deliberate
   **function-local lazy import** so the library imports without Qt; PySide6 itself is LGPL)
@@ -207,4 +207,4 @@ The `tcide/` boundary is enforced by tests — break it and CI fails:
 2. **Diff review modal** (the lost `acceptDiff`)
 3. Surface already-tested backend features in the UI (outline / search / completion panels)
 4. Packaging (PyInstaller) and installers
-5. Execute the license split (LGPL library + GPL app + LICENSE files)
+5. Unify the license to LGPL-3.0-or-later (`tools/apply_licenses.py`, see LICENSE)

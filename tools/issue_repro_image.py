@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """最小复现：``<Image src="{$p}">`` 不响应状态变化。
 
 对**任何**已安装的 PawUI 都能跑（0.1.3.3 上失败）：

@@ -31,7 +31,7 @@
 ## 快速开始
 
 ```bash
-# 1) 装依赖（PawUI 是 GPL-3.0；PySide6 是 LGPL-3.0）
+# 1) 装依赖（PawUI 与 PySide6 均为 LGPL-3.0）
 pip install PySide6 "pawui>=0.1.1"
 
 # 2) 跑 IDE（用当前目录作为项目）
@@ -185,20 +185,22 @@ TCIDE_CONSOLE=1 pyinstaller tcide-pawui.spec    # 带控制台，排查启动崩
 
 ## 许可证
 
-本项目**拆开授权**，因为依赖的 PawUI 是 GPL-3.0（其 `pyproject.toml` 声明
-`GPL-3.0-or-later`）——GPL 要求链接它的**组合作品整体**按 GPL 发布：
+本项目**整仓统一 LGPL-3.0-or-later**。历史上曾是「拆开授权」（库 LGPL + 应用 GPL），
+原因是当时依赖的 PawUI 是 GPL-3.0；**PawUI 后来改为 LGPL-3.0-or-later**
+（其 `pyproject.toml` 声明 `license = "LGPL-3.0-or-later"`，LICENSE 为 Lesser 全文），
+于是不再需要拆开：
 
 | 部分 | 许可证 | 说明 |
 |---|---|---|
-| `tcide/`（28 个文件） | **LGPL-3.0-or-later** | 不依赖 PawUI 的可复用库；见 [`tcide/LICENSE`](tcide/LICENSE) |
-| `main.py` / `app_selftest.py` / `app.paw` / `tools/` / `tests/` | **GPL-3.0-or-later** | 链接了 GPL 的 PawUI，组合作品必须 GPL；见 [`LICENSE`](LICENSE) |
+| 全部（`tcide/`、`main.py`、`app_selftest.py`、`app.paw`、`tools/`、`tests/`） | **LGPL-3.0-or-later** | 见 [`LICENSE`](LICENSE)（PawUI 那份 LGPL-3.0 原文） |
 
 每个源文件头部都有 **SPDX 标识**（`tools/apply_licenses.py` 幂等地写入，
-并校验许可证原文与本机权威副本逐字节一致）。
+并校验 LICENSE 确实是 LGPL-3.0 全文）。
 
 `tcide/` 的边界由测试守着，破坏即 CI 失败：
 
-- `test_package_does_not_import_pawui` —— 库侧不得依赖 GPL 的 PawUI
+- `test_package_does_not_import_pawui` —— 库侧不得依赖 PawUI
+  （许可证上已无强制，但这保证 `tcide/` 能独立复用、能离线严格测试）
 - `test_package_does_not_import_qt_at_module_level` —— 库侧模块级不得拖进界面栈
   （`tcide/web/bridge.py` 里的 PySide6 是**函数内惰性导入**，属刻意设计：
   不装 Qt 也能导入这个库；PySide6 本身是 LGPL）
@@ -215,4 +217,4 @@ TCIDE_CONSOLE=1 pyinstaller tcide-pawui.spec    # 带控制台，排查启动崩
 2. **Diff 审核弹窗**（补上原版丢失的 `acceptDiff`）
 3. 把已测过的后端能力接进界面（大纲 / 搜索 / 补全面板）
 4. 打包（PyInstaller）与安装包
-5. 执行许可证拆分（LGPL 库 + GPL 应用 + LICENSE 文件）
+5. 统一许可证为 LGPL-3.0-or-later（`tools/apply_licenses.py`，见 LICENSE）

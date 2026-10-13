@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """LSP 的测试：分帧/URI/转换（纯逻辑）+ 用**假语言服务器**做端到端。
 
 假服务器是一个真说 stdio JSON-RPC 的 Python 脚本（本文件生成），

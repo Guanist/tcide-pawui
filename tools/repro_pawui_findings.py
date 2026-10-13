@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 r"""复现本轮发现的 3 个 PawUI 问题（可对原版 / 打过补丁的树分别运行）。
 
 用法::

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """探针：file:// 页面 + QWebChannel 到底能不能连上。
 
 复现 app 里的场景，但把 channel **在加载之前**建立（app 里是加载之后才建，

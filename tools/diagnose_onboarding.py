@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """诊断：为什么「快速上手」Panel 的内容不显示。
 
 把每个 Panel 的 header（QToolButton）文本、勾选状态、以及 body 的可见性打出来 ——

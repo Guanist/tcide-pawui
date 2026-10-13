@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """runner.py 的测试：超时 / 重试 / 检查点 / 恢复 / 日志 / 取消。"""
 
 from __future__ import annotations

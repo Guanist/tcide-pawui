@@ -52,7 +52,7 @@ python -m tcide.cli analyze   # 架构分析（可对任意项目跑）
 ## 授权
 
 应用侧（`main.py` / `app.paw` / `app_selftest.py` / `tools/` / `tests/`）为
-**GPL-3.0-or-later**；纯后端 `tcide/` 为 **LGPL-3.0-or-later**（不依赖 PawUI，可独立复用）。
+**LGPL-3.0-or-later**（与 PawUI 一致）。
 
 详见 [REPORT.md](https://github.com/Guanist/tcide-pawui/blob/main/REPORT.md)
 与 [FEATURE_MATRIX.md](https://github.com/Guanist/tcide-pawui/blob/main/FEATURE_MATRIX.md)。

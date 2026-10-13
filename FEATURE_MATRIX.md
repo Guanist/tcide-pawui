@@ -386,11 +386,12 @@ offscreen 建树 + 交互断言 + 截图。这条原则同时决定了许可证�
 
 | 文件 | 许可证 | 来源（逐字节校验一致） |
 |---|---|---|
-| `tcide/LICENSE` | **LGPL-3.0-or-later** | 本机 `pystray-0.19.5.dist-info/COPYING.LGPL`（7,656 字节） |
-| `LICENSE` | **GPL-3.0-or-later** | PawUI 仓库的 `LICENSE`（35,149 字节） |
+| `LICENSE` | **LGPL-3.0-or-later** | PawUI 仓库的 `LICENSE`（7,652 字节，Lesser 全文） |
+| ~~`tcide/LICENSE`~~ | — | 拆开授权时代的第二份，统一后**已删除** |
 
-**为什么必须拆开**：PawUI 的 `pyproject.toml` 声明 `GPL-3.0-or-later`，GPL 要求链接它的
-**组合作品整体**按 GPL 发布，所以"整个 tcide-pawui 用 LGPL"在法务上不成立。
+**为什么后来能统一**：当时拆开是因为 **PawUI 是 GPL-3.0**，而 GPL 要求链接它的组合作品
+整体按 GPL 发布。**PawUI 之后改为 `LGPL-3.0-or-later`**（`pyproject.toml` 明确声明，
+LICENSE 为 Lesser 全文），于是整仓统一为 LGPL-3.0-or-later（用 `tools/apply_licenses.py` 收敛）。
 而 `tcide/`（28 个文件）是**不依赖 PawUI** 的可复用库 —— 只用到标准库，
 **零模块级界面依赖**（`tcide/web/bridge.py` 里的 PySide6 是函数内惰性导入，
 而 PySide6 本身也是 LGPL）。对它用 LGPL 正当：这正是 LGPL 的设计用途（库）。
@@ -399,13 +400,13 @@ offscreen 建树 + 交互断言 + 截图。这条原则同时决定了许可证�
 
 1. `tools/apply_licenses.py` —— 幂等写入 SPDX 头 + 校验原文一致性 + 校验无 BOM /
    无编码损坏（`--write` 才落盘，默认只检查）；
-2. 64 个源文件全部带上 SPDX 头（库侧 LGPL / 应用侧 GPL）；
+2. 全部源文件带上 SPDX 头（统一 LGPL-3.0-or-later）；
 3. **把 `tcide/shell_selftest.py` 移到应用侧 `app_selftest.py`**（`tools/move_selftest.py`）
    —— 这样 `tcide/` 的"零界面依赖"**没有例外**，边界可以硬断言；
 4. 边界与许可证门禁（`tests/test_layering.py`，破坏即 CI 失败）：
-   - 库侧不得 import `pawui`（GPL）
+   - 库侧不得 import `pawui`（许可证上已无强制，但这保证库能独立复用、可离线测试）
    - 库侧**模块级**不得 import Qt（惰性导入允许且已注明理由）
-   - 库侧每个 `.py` 必须有 LGPL 头；应用侧每个 `.py` 必须有 GPL 头
+   - 每个 `.py` 都必须有 `LGPL-3.0-or-later` 头；`LICENSE` 必须是 LGPL-3.0 全文
    - 两份许可证文件必须在场且是全文
    - 库侧不得误用 GPL 头（`GPL-3.0-or-later` 是 `LGPL-3.0-or-later` 的**子串**，
      必须锚定判断 —— 我用子串判断时 27 个文件全被误报过）

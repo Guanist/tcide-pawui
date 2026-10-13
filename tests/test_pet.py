@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """pet.py 的测试（状态机 / 动画 / 绘制指令，全部离线）。"""
 
 from __future__ import annotations

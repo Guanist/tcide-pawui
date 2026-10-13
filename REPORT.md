@@ -114,7 +114,7 @@ python tools/diagnose_monaco.py                      # Monaco 引擎自诊断
 ```
 app.paw           PawUI 声明式界面（216 行）
 main.py           入口 + 后端接线（1,640 行，30+ 处理器）
-app_selftest.py   18 项界面自检（应用侧，GPL）
+app_selftest.py   18 项界面自检
 tcide/            后端核心（28 个模块，**不 import PawUI**，可离线严格测试）
   ├─ agent/gitintel/lint/diff/tabs/pet/lsp/term/panels/cli/…
   └─ web/  Monaco 兼容协议 + QWebChannel 桥 + 离线前端（含 vendored Monaco）
@@ -122,11 +122,10 @@ tests/            990 条（28 个文件）
 tools/            探针、vendor 脚本、许可证脚本、诊断脚本
 ```
 
-**拆开授权**（因为 PawUI 是 `GPL-3.0-or-later`）：
+**统一授权**：整仓 **LGPL-3.0-or-later**（与 PawUI 一致 —— PawUI 已从 GPL 改为 LGPL）：
 
 | 部分 | 许可证 |
 |---|---|
-| `tcide/` | **LGPL-3.0-or-later**（见 `tcide/LICENSE`） |
-| `main.py` / `app_selftest.py` / `app.paw` / `tools/` / `tests/` | **GPL-3.0-or-later**（见 `LICENSE`） |
+| 全部 | **LGPL-3.0-or-later**（见 `LICENSE`，与 PawUI 同一份 LGPL-3.0 原文） |
 
 边界由测试守着：库侧不得 import `pawui`、模块级不得依赖 Qt、每个文件必须有对应 SPDX 头。

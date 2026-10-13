@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """虎猫 TCIDE · PawUI 版：入口与后端接线。
 
 把 `tcide/` 里的后端核心（工作区 / 索引 / Git / 工具 / 编排）接到 `app.paw` 上。

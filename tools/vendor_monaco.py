@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """把 Monaco 编辑器 vendored 进 ``tcide/web/vendor/monaco/``（离线硬要求）。
 
 为什么必须 vendored：Monaco 默认从 CDN 取资源，而本项目要求**完全离线可用**。

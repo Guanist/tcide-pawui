@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """分层与许可证边界守卫（不需要 Qt，秒级）。
 
 两条不变量：
@@ -186,48 +186,46 @@ class TestSourceEncoding:
 
 
 class TestLicenseHeaders:
-    """SPDX 头门禁：新增文件忘了写许可证头就会红。"""
+    """SPDX 头门禁：**统一 LGPL-3.0-or-later**，新增文件忘了写头就会红。"""
 
     LGPL = "SPDX-License-Identifier: LGPL-3.0-or-later"
-    GPL = "SPDX-License-Identifier: GPL-3.0-or-later"
+    #: 单独出现的 GPL 标识。``(?<!L)`` 不能少：``GPL-3.0-or-later`` 是
+    #: ``LGPL-3.0-or-later`` 的**子串**，不锚定就会把每个 LGPL 文件误报成 GPL
+    #: （这个坑在 tools/apply_licenses.py 里踩过一次，27 个文件被误报）。
+    GPL_PATTERN = re.compile(r"SPDX-License-Identifier:\s*(?<!L)GPL-3\.0-or-later")
 
-    def test_every_library_file_is_lgpl(self):
-        missing = []
-        for path in sorted(PACKAGE.rglob("*.py")):
-            head = "\n".join(path.read_text(encoding="utf-8").splitlines()[:3])
-            if self.LGPL not in head:
-                missing.append(path.relative_to(ROOT).as_posix())
-        assert not missing, f"库侧文件缺少 LGPL 头: {missing}"
+    def _python_files(self):
+        return [*ROOT.glob("*.py"), *sorted(ROOT.glob("tools/*.py")),
+                *sorted(ROOT.glob("tests/*.py")), *sorted(PACKAGE.rglob("*.py"))]
 
-    def test_every_app_file_is_gpl(self):
-        targets = [ROOT / "main.py", ROOT / "app_selftest.py"]
-        targets += sorted(ROOT.glob("tools/*.py"))
-        targets += sorted(ROOT.glob("tests/*.py"))
-        missing = [path.relative_to(ROOT).as_posix() for path in targets
-                   if path.exists()
-                   and self.GPL not in path.read_text(encoding="utf-8")]
-        assert not missing, f"应用侧文件缺少 GPL 头: {missing}"
+    def test_every_python_file_carries_the_lgpl_header(self):
+        """全仓统一 LGPL：库侧与应用侧用同一个标识，不再分两套。"""
+        missing = [path.relative_to(ROOT).as_posix() for path in self._python_files()
+                   if path.is_file() and self.LGPL not in path.read_text(encoding="utf-8")]
+        assert not missing, f"缺少 LGPL 头的文件: {missing}"
 
-    def test_license_files_are_present_and_full(self):
-        """两份许可证文件必须在场且是全文（原文来自本机权威副本）。"""
-        for name, minimum in (("LICENSE", 30000), ("tcide/LICENSE", 7000)):
-            path = ROOT / name
-            assert path.exists(), f"缺少 {name}"
-            assert path.stat().st_size >= minimum, f"{name} 太小，可能不是全文"
+    def test_license_file_is_the_full_lgpl_text(self):
+        """LICENSE 必须是 LGPL-3.0 **全文**（与 PawUI 同一份）。
 
-    def test_no_gpl_header_inside_the_library(self):
-        """`GPL-3.0-or-later` 是 `LGPL-3.0-or-later` 的**子串**，必须锚定判断。
-
-        （我在 ``tools/apply_licenses.py`` 里就先用子串判断写错过一次：
-        27 个 LGPL 文件全被误报成 GPL。）
+        历史：这里曾经校验两份文件 —— GPL 的 ``LICENSE``（≥30000 字节）与
+        LGPL 的 ``tcide/LICENSE``。PawUI 从 GPL 改为 LGPL-3.0-or-later 之后，
+        整仓统一，``tcide/LICENSE`` 已删除，这里同步改成单一校验。
         """
-        import re
+        path = ROOT / "LICENSE"
+        assert path.exists(), "缺少 LICENSE"
+        text = path.read_text(encoding="utf-8")
+        assert path.stat().st_size >= 7000, "LICENSE 太小，可能不是全文"
+        assert "GNU LESSER GENERAL PUBLIC LICENSE" in text, "不是 LGPL 原文"
+        assert "Version 3, 29 June 2007" in text, "不是 LGPL-3.0 原文"
+        assert not (ROOT / "tcide" / "LICENSE").exists(), \
+            "tcide/LICENSE 是拆开授权时代的第二份，统一后应已删除"
 
-        pattern = re.compile(r"SPDX-License-Identifier:\s*GPL-3")
-        wrong = [path.relative_to(ROOT).as_posix()
-                 for path in sorted(PACKAGE.rglob("*.py"))
-                 if pattern.search(path.read_text(encoding="utf-8"))]
-        assert not wrong, f"库侧文件误用 GPL 头: {wrong}"
+    def test_no_bare_gpl_identifier_anywhere(self):
+        """不能有单独的 GPL 标识（锚定判断，避免子串误报）。"""
+        wrong = [path.relative_to(ROOT).as_posix() for path in self._python_files()
+                 if path.is_file()
+                 and self.GPL_PATTERN.search(path.read_text(encoding="utf-8"))]
+        assert not wrong, f"这些文件仍是 GPL 头: {wrong}"
 
 
 class TestAppWiring:

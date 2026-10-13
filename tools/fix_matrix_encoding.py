@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """修复被 PowerShell Get-Content/Set-Content 往返破坏的 UTF-8 编码。
 
 现象：原文 UTF-8 字节被按 GBK 解码后再存成 UTF-8，于是 `关键` 变成 `鍏抽敭`。

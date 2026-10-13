@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """models.py 的测试：用本地假 HTTP 服务断言三家的协议细节（完全离线）。"""
 
 from __future__ import annotations

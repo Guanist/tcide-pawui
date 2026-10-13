@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """探针：QtWebEngine 在这个环境（offscreen + 沙箱）里到底能不能起来。
 
 在把 ``<Web>`` 挂进窗口之前必须先测出来 —— 否则一挂上去就是"要么跑不起来、

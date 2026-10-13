@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """诊断：Monaco 在**应用页面**里为什么起不来（独立探针里是好的）。
 
 读页面里的 ``window.__monacoDiag``（自诊断对象），把"走到哪一步"打出来：

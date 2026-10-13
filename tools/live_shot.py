@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """在**真实平台**（非 offscreen）下给应用截一张图 —— 用于把界面呈现出来。
 
 用法：``python tools/live_shot.py [项目目录] [输出文件]``

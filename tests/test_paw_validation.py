@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """用 PawUI 自己的校验器静态检查 app.paw（parse-only，不需要 Qt）。
 
 **为什么需要这条测试**：属性名写错**不会**让窗口建树失败 —— 那个控件只是永远

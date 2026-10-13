@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """``<Web>`` 编辑器桥的测试（纯协议部分，不需要 Qt / QtWebEngine）。
 
 Qt 侧只做两件薄事：把 JSON 字符串发出去、把收到的字符串交给 ``decode_event``。

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """对**真实**模型端点做一次冒烟测试（Key 从环境变量读，绝不写进文件）。
 
 用法::

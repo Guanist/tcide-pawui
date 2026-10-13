@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """把 FEATURE_MATRIX.md 的损坏尾部截掉，重写正确的「许可证计划」一节。
 
 不依赖复现乱码字节：按 `## 6.` 标记截断，再追加正确文本。

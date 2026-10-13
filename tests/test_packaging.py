@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """打包与工程文件的自检（不需要 PyInstaller / Qt）。
 
 **诚实说明**：本环境没有安装 PyInstaller，所以 ``tcide-pawui.spec`` 无法实跑。

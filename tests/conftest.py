@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """共用的临时项目 fixture。
 
 刻意不用 pytest 的 ``tmp_path``（系统临时目录），而是在工作区内建一个受控目录：

@@ -1,5 +1,5 @@
 # SPDX-FileCopyrightText: 2025 tcide-pawui contributors
-# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """diff.py 的测试：生成 / 解析 / 按 hunk 应用 / 审核会话。
 
 重点验证 ``acceptDiff`` 的**部分接受**语义，以及"接受之前磁盘不变"这条前提。
