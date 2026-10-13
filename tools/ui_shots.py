@@ -25,6 +25,16 @@ def main() -> int:
 
     import main as tcide_main
 
+    # 主题在**建树前**决定（PawUI 的组件样式是建树时算好并内联的，建完再切没用）
+    light = "--light" in sys.argv
+    if light:
+        os.environ["TCIDE_CONFIG_DIR"] = str(
+            pathlib.Path(os.environ.get("TEMP", ".")) / "tcide-shots-light")
+        pathlib.Path(os.environ["TCIDE_CONFIG_DIR"]).mkdir(parents=True, exist_ok=True)
+        from tcide.settings import Settings, save as save_settings
+
+        save_settings(Settings(theme="light"))
+
     runtime, app = tcide_main.create_runtime(ROOT)
     qapp = QApplication.instance()
     runtime.run(block=False)
@@ -36,6 +46,7 @@ def main() -> int:
     app.push()
 
     OUT.mkdir(parents=True, exist_ok=True)
+    suffix = "light" if light else "main"
 
     def snap(name: str) -> None:
         pixmap = runtime.root.grab()
@@ -43,13 +54,13 @@ def main() -> int:
         print(f"{'已保存' if ok else '★失败'} {name} ({pixmap.width()}x{pixmap.height()})")
 
     def stage1() -> None:
-        snap("ui-1-main.png")
+        snap(f"ui-1-{suffix}.png")
         app.cmd_settings_open()
         qapp.processEvents()
         QTimer.singleShot(600, stage2)
 
     def stage2() -> None:
-        snap("ui-2-settings.png")
+        snap(f"ui-3-settings-{suffix}.png")
         qapp.quit()
 
     QTimer.singleShot(2200, stage1)

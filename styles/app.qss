@@ -3,19 +3,26 @@
 
    虎猫 TCIDE · 界面样式表（Qt Style Sheets —— 语法就是 CSS）。
 
-   ## 配色：虎猫皮毛（橙 · 黑 · 白）
+   ## 两套主题：深色是**黑橙**，浅色是**白橙**
+
+   这份文件只维护**深色**这一份（下表的色值）；**浅色由 `tcide/theme.py` 的
+   `swap_qss()` 按角色映射生成** —— 只维护一份样式表，比手写两份 CSS 可靠
+   （改一处不会漏掉另一处）。两套主题**共用同一支橙**：橙是这只虎猫的标识色，
+   换主题不该把它换掉。
+
+   ## 深色配色：虎猫皮毛（橙 · 黑 · 白）
 
    | 用途 | 色值 | 取自 |
    |---|---|---|
    | 主色 / 强调 | #e8802a | 皮毛的橙 |
    | 亮部 / 悬停 | #f5a65b | 阳光下的毛尖 |
    | 深橙 | #c96a1e | 背脊的暗橙 |
-   | 背景 | #14100b | 条纹之间的阴影 |
-   | 面板 | #1f1811 | 暖黑（不是冷灰蓝） |
-   | 条纹 | #0d0a07 | 虎纹的黑 |
+   | 背景 | #0d0b09 | 条纹之间的阴影 |
+   | 面板 | #17130f | 暖黑（不是冷灰蓝） |
+   | 条纹 | #050403 | 虎纹的黑 |
    | 文字 | #f6efe3 | 腹部的乳白 |
    | 次要文字 | #b8a48c | 柔和的毛色 |
-   | 边界 | #3b2c1e | 条纹边缘的棕 |
+   | 边界 | #33261a | 条纹边缘的棕 |
    | 危险 | #d2503f | 暖红（不用刺眼的纯红） |
 
    同一套颜色也写进了 app.paw 的 `<Theme extends="dark">`，让**框架自己的组件**
@@ -36,19 +43,19 @@ QWidget {
     color: #f6efe3;
 }
 QMainWindow, QDialog {
-    background: #14100b;
+    background: #0d0b09;
 }
 QToolTip {
-    background: #2a2016;
+    background: #221a12;
     color: #fdf8f0;
-    border: 1px solid #3b2c1e;
+    border: 1px solid #33261a;
     border-radius: 6px;
     padding: 6px 9px;
 }
 
 /* ── 卡片感：GroupBox / Dialog 做出层次 ─────────────────────────────── */
 QGroupBox {
-    background: #1f1811;
+    background: #17130f;
     border: 1px solid #33261a;
     border-radius: 10px;
     margin-top: 14px;
@@ -150,7 +157,7 @@ QComboBox:hover { border-color: #e8802a; }
 QComboBox::drop-down { border: none; width: 20px; }
 QComboBox QAbstractItemView {
     background: #241b13;
-    border: 1px solid #3b2c1e;
+    border: 1px solid #33261a;
     border-radius: 8px;
     selection-background-color: #4a2f14;
     padding: 4px;
@@ -199,7 +206,7 @@ QSplitter::handle:vertical { height: 3px; }
 /* ── 菜单 / 工具按钮 ───────────────────────────────────────────────── */
 QMenu {
     background: #241b13;
-    border: 1px solid #3b2c1e;
+    border: 1px solid #33261a;
     border-radius: 8px;
     padding: 5px;
 }
@@ -211,7 +218,7 @@ QToolButton {
     border-radius: 8px;
     padding: 4px 8px;
 }
-QToolButton:hover { background: #2a2016; border-color: #3b2c1e; }
+QToolButton:hover { background: #2a2016; border-color: #33261a; }
 QToolButton:pressed { background: #3a2c1f; }
 
 /* ── 进度条 ────────────────────────────────────────────────────────── */

@@ -12,7 +12,7 @@
   所有动态内容都靠 {$state} 模板驱动（PawUI 的 bind_state 会在状态变化时刷新）。
 -->
 
-<Window title="虎猫 TCIDE · PawUI" theme="dark" width="1380" height="880">
+<Window title="虎猫 TCIDE · PawUI" width="1380" height="880">
   <Column gap="0">
 
     <!-- ═══════════ 顶部工具栏 ═══════════ -->
@@ -220,6 +220,12 @@
       <Divider/>
       <Text bold="true" size="13">界面</Text>
       <Row gap="8" align="center">
+        <Text color="subtext" size="12">主题</Text>
+        <Segmented id="set_theme" items="{$theme_items}"
+                   value="{$settings_theme_label}" on_change="on_settings_theme"/>
+        <Text color="subtext" size="11">深色是黑橙（条纹与阴影），浅色是白橙（腹部）</Text>
+      </Row>
+      <Row gap="8" align="center">
         <Text color="subtext" size="12">字号</Text>
         <Segmented id="set_font" items="{$font_items}" value="{$settings_font_size}"
                    on_change="on_settings_font"/>
@@ -283,33 +289,16 @@
 </Window>
 
 <!--
-  ═══════════ 主题：虎猫皮毛配色（橙 · 黑 · 白）═══════════
+  ═══════════ 主题：虎猫配色（橙 · 黑 · 白）═══════════
 
-  在 dark 底子上覆盖颜色 —— 这是 PawUI 支持的声明式主题机制
-  （优先级：Window theme → <Theme extends> → <Color> 覆盖）。
-  走这条路而不是在 Python 里造 Theme 对象，是为了让**框架自己的组件**
-  （按钮 / 面板标题 / 列表 / 下拉）也一起变色：它们用的是框架主题令牌，
-  全局 QSS 压不过它们的内联样式（实测过）。
+  **主题刻意不写在这个文件里。** 权威来源是 ``tcide/theme.py`` 的调色板
+  （深色 = 黑橙，浅色 = 白橙），由 ``main.py`` 在**建树前**交给 Runtime。
 
-  取自虎猫皮毛：
-    · 橙  accent #e8802a / fur #c96a1e / amber #f5a65b —— 皮毛与亮部
-    · 黑  background #14100b / surface #1f1811 / stripe #0d0a07 —— 条纹与阴影
-    · 白  text #f6efe3 / belly #fdf8f0 —— 腹部与口鼻的乳白
+  为什么不在这里写 ``<Theme extends="dark">``：实测发现 ``runtime.run()`` 建树时
+  **会按文件里的 <Theme> / Window theme 重新解析主题**，把 Python 侧预先设好的
+  主题覆盖回去 —— 症状是浅色主题只在窗口与工具栏生效、PawUI 组件仍是深色 ✗。
+  改成"一处定义"之后，两套主题才真正整套生效。
 -->
-<Theme extends="dark">
-  <Color name="background" value="#14100b"/>
-  <Color name="surface" value="#1f1811"/>
-  <Color name="text" value="#f6efe3"/>
-  <Color name="subtext" value="#b8a48c"/>
-  <Color name="accent" value="#e8802a"/>
-  <Color name="border" value="#3b2c1e"/>
-  <Color name="danger" value="#d2503f"/>
-  <!-- 自定义令牌：可用在任意 bg= / color= / fg= 上 -->
-  <Color name="stripe" value="#0d0a07"/>
-  <Color name="fur" value="#c96a1e"/>
-  <Color name="amber" value="#f5a65b"/>
-  <Color name="belly" value="#fdf8f0"/>
-</Theme>
 
 <!--
   <script> 必须是顶层元素（<Window> 的兄弟），不能写在 <Window> 里 ——
@@ -335,6 +324,8 @@ settings_api_key = ""
 settings_model = ""
 settings_timeout = 60
 settings_font_size = "13"
+settings_theme_label = "深色（黑橙）"
+theme_items = ["深色（黑橙）", "浅色（白橙）"]
 settings_compact_label = "关"
 settings_engine_label = "Monaco"
 settings_gate_label = "开"

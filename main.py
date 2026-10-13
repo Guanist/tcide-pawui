@@ -57,6 +57,7 @@ from tcide.indexer import ProjectIndex
 from tcide.diff import ReviewSession, ReviewingWorkspace
 from tcide.memory import ProjectMemoryBuilder
 from tcide.models import PRESETS, ChatResponse, ModelConfig, ModelError
+from tcide import theme as tiger_theme
 from tcide.settings import (Settings, config_path as settings_path,
                             load as load_settings, normalize as normalize_settings,
                             save as save_settings, summary as settings_summary)
@@ -327,7 +328,7 @@ if __name__ == "__main__":
             "cmd_settings_open", "cmd_settings_close", "on_settings_accept",
             "on_settings_provider", "on_settings_timeout", "on_settings_font",
             "on_settings_compact", "on_settings_engine", "on_settings_gate",
-            "on_settings_restore",
+            "on_settings_restore", "on_settings_theme",
             "on_onboarding_toggle",
             "cmd_split_open", "cmd_split_close",
             "cmd_lsp_status", "cmd_lsp_start", "cmd_lsp_stop",
@@ -862,6 +863,10 @@ if __name__ == "__main__":
     settings: Settings = None            # type: ignore[assignment]
     _settings_open = False
     _stylesheet_applied = False
+    #: 当前主题（dark = 黑橙 / light = 白橙）
+    _theme_name = "dark"
+    #: PawUI 自己那份应用级样式表（切换主题时以它为基底重新拼接）
+    _base_stylesheet: str | None = None
 
     #: 工具菜单条目：显示文本 -> 处理键
     TOOL_ENTRIES: tuple[tuple[str, str], ...] = (
@@ -945,27 +950,87 @@ if __name__ == "__main__":
     # 不依赖 Qt 也不依赖 PawUI，可离线测试。
 
     def _apply_stylesheet(self) -> None:
-        """把 ``styles/app.qss`` **追加**到应用级样式表（不覆盖 PawUI 自己的）。
+        """应用全局样式表（深色原文 / 浅色按映射生成）；**可重复调用**。
 
         为什么用追加：PawUI 给部分组件设了内联样式（实测 14 处：Button / Input /
         List / Table / Panel 头部…），内联在**同名属性**上优先级更高。所以全局
         样式表只在它没定义的地方生效：页签、列表项状态、滚动条、分隔条、对话框、
-        聚焦环、提示气泡…… 这已足够把"默认 Qt 观感"变成有层次的深色界面。
+        聚焦环、提示气泡……
+
+        ``_base_stylesheet`` 记住 PawUI 自己的那份，避免反复切换时越拼越长。
         """
-        root = getattr(self.runtime, "root", None)
-        if root is None or not hasattr(root, "findChild") or not APP_QSS_FILE.is_file():
-            return
         try:
             from PySide6.QtWidgets import QApplication
 
             app = QApplication.instance()
-            if app is None:
-                return
-            app.setStyleSheet(app.styleSheet() + "\n"
-                              + APP_QSS_FILE.read_text(encoding="utf-8"))
+        except Exception:      # noqa: BLE001
+            return
+        if app is None or not APP_QSS_FILE.is_file():
+            return
+        if self._base_stylesheet is None:
+            self._base_stylesheet = app.styleSheet()
+        try:
+            sheet = APP_QSS_FILE.read_text(encoding="utf-8")
+            sheet = tiger_theme.swap_qss(sheet, theme=self._theme_name)
+            app.setStyleSheet(self._base_stylesheet + "\n" + sheet)
             self._stylesheet_applied = True
         except Exception as exc:      # noqa: BLE001 - 样式失败不该影响功能
             self._set_status(f"样式表加载失败：{type(exc).__name__}")
+
+    def build_theme(self, name: str):
+        """按调色板造一个 PawUI ``Theme`` 对象（含自定义令牌）。"""
+        values = tiger_theme.palette(name)
+        core = ("background", "surface", "text", "subtext", "accent", "border",
+                "danger")
+        from pawui.theme import Theme
+
+        theme = Theme(**{key: values[key] for key in core})
+        theme.custom = {key: value for key, value in values.items()
+                        if key not in core}
+        return theme
+
+    def register_themes(self) -> None:
+        """把虎猫主题**注册进 PawUI 的主题表**，并返回名字映射。
+
+        为什么必须注册而不能只传对象（实测得出的结论）：``runtime.run()`` 建树时会
+        ``_resolve_theme()``，而它按**名字**从 ``pawui.theme.THEMES`` 里取主题
+        （``THEMES.get(name, Theme.light)()``）—— 只 ``set_theme(对象)`` 的话，
+        建树这一步会把对象丢掉、退回框架自带的 light/dark，症状是
+        **浅色主题下按钮变回 PawUI 的蓝色** ✗。
+
+        ``THEMES`` 的值是**工厂**（代码里会加 ``()`` 调用），所以注册成 lambda。
+        """
+        from pawui.theme import THEMES
+
+        names = {}
+        for key in ("dark", "light"):
+            registered = f"tiger-{key}"
+            THEMES[registered] = (lambda palette_name=key: self.build_theme(palette_name))
+            names[key] = registered
+        return names
+
+    def apply_theme(self, name: str) -> None:
+        """切换主题：**深色 = 黑橙**，**浅色 = 白橙**（见 tcide/theme.py）。
+
+        一个**实测出来的限制**（值得写下来）：PawUI 的组件样式是**建树时**按主题
+        算好并内联到控件上的，所以 ``runtime.set_theme()`` 之后再抓图，画面**不会**
+        变（我先验证的是 ``runtime.theme`` 对象，看着"成功了"，但截出来还是黑的 ✗）。
+        因此：
+
+        - 主题要在**建树之前**交给 ``Runtime(theme=...)`` 才完全生效（启动路径）；
+        - 运行中切换会立刻改掉主题对象与全局样式表，但**已建好的控件要重启才全变**
+          —— 界面会如实提示这一点，而不是假装立刻生效。
+        """
+        values = tiger_theme.palette(name)
+        self._theme_name = "light" if tiger_theme.is_light(name) else "dark"
+        try:
+            if self.runtime is not None and hasattr(self.runtime, "set_theme"):
+                # 传**注册名**而不是对象：对象会在建树时被 _resolve_theme 丢掉
+                registered = self.register_themes()
+                self.runtime.set_theme(registered[self._theme_name])
+        except Exception as exc:      # noqa: BLE001 - 主题失败不该让界面起不来
+            self._set_status(f"主题切换失败：{type(exc).__name__}: {exc}")
+        self._apply_stylesheet()
 
     def _apply_settings(self) -> None:
         """把设置作用到状态与界面上（模型 / 审查门 / 字号）。"""
@@ -976,6 +1041,8 @@ if __name__ == "__main__":
         if settings.api_key:
             self.state.api_key = settings.api_key
         self.state.review_gate = bool(settings.review_gate)
+        # 主题（深色黑橙 / 浅色白橙）—— 会在 _apply_stylesheet 里一起生效
+        self.apply_theme(settings.theme)
         try:
             from PySide6.QtWidgets import QApplication
 
@@ -996,6 +1063,8 @@ if __name__ == "__main__":
             "settings_model": self.settings.model,
             "settings_timeout": int(self.settings.timeout),
             "settings_font_size": str(self.settings.font_size),
+            "settings_theme_label": tiger_theme.LABELS.get(self.settings.theme,
+                                                           "深色（黑橙）"),
             "settings_compact_label": "开" if self.settings.compact else "关",
             "settings_engine_label": "Monaco" if self.settings.monaco_enabled else "内置",
             "settings_gate_label": "开" if self.settings.review_gate else "关",
@@ -1040,6 +1109,20 @@ if __name__ == "__main__":
             self.settings.font_size = int(str(value).strip())
         except ValueError:
             return
+        self.push()
+
+    def on_settings_theme(self, value: str = "", *_args) -> None:
+        """切换主题（深色黑橙 / 浅色白橙）。
+
+        **已建好的控件要重启才全变**（PawUI 在建树时就把组件样式内联上了）——
+        所以这里如实提示，而不是假装立刻生效。
+        """
+        text = str(value)
+        name = "light" if ("浅" in text or "light" in text.lower()) else "dark"
+        self.settings.theme = name
+        self.apply_theme(name)
+        self._set_status(f"主题：{tiger_theme.LABELS.get(name, name)}"
+                         f"（已建好的控件需重启后完全生效）")
         self.push()
 
     def on_settings_compact(self, value: str = "", *_args) -> None:
@@ -1262,7 +1345,7 @@ if __name__ == "__main__":
     #: 主题色的十六进制回退值（**虎猫皮毛配色**：橙 / 黑 / 白）。
     #: 界面**始终推十六进制**而不是令牌名，所以在未打补丁的 PawUI 上也能正常显示
     #: （令牌名经模板传递时不会被解析成颜色，见 FEATURE_MATRIX 的 bug 清单）。
-    FALLBACK_COLORS = {"danger": "#d2503f", "border": "#3b2c1e",
+    FALLBACK_COLORS = {"danger": "#d2503f", "border": "#33261a",
                        "accent": "#e8802a", "subtext": "#b8a48c",
                        "amber": "#f5a65b", "fur": "#c96a1e"}
 
@@ -2144,8 +2227,17 @@ def create_runtime(root: str | Path = ".", *, provider: str = "deepseek",
 
     app = TCIDEApp(root, provider=provider, api_key=api_key)
     source = (paw_file or PAW_FILE).read_text(encoding="utf-8")
-    runtime = Runtime(source, str(paw_file or PAW_FILE), context=app.context())
+    # 主题：**注册进 PawUI 的主题表**再按名字传 —— 构造参数只接受名字
+    # （`THEMES.get(theme, ...)`，传对象会 TypeError），而且建树时 _resolve_theme
+    # 会按名字重新取主题，只 set_theme(对象) 会被丢掉（实测：浅色下按钮变蓝）。
+    registered = app.register_themes()
+    theme_name = registered["light" if tiger_theme.is_light(app.settings.theme)
+                            else "dark"]
+    runtime = Runtime(source, str(paw_file or PAW_FILE), context=app.context(),
+                      theme=theme_name)
     app.runtime = runtime
+    app._theme_name = "light" if theme_name.endswith("light") else "dark"
+    app._apply_stylesheet()
     return runtime, app
 
 

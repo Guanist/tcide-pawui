@@ -505,27 +505,57 @@ def _run_checks(runtime, app, qapp) -> list[Check]:
     check("设置面板：打开/写入/保存/读回 + 样式表", settings_panel)
 
     def tiger_theme() -> tuple[bool, str]:
-        """虎猫皮毛主题必须**真的被 PawUI 应用**，而不只是写在 .paw 里。
+        """虎猫配色必须**真的被 PawUI 应用**，而不只是写在 .paw 里。
 
         只检查文件内容是不够的：主题要经过 `Window theme` → `<Theme extends>` →
         `<Color>` 三层覆盖才落到 `runtime.theme` 上，任何一层没接上，界面就还是
         默认配色而文件看着"写对了"。
+
+        期望值从 `tcide/theme.py` **读**（权威来源）—— 不在自检里再抄一份色值：
+        第一版抄了一份，改配色后自检自己先红，说明抄是错的。
         """
+        from tcide.theme import TIGER_DARK
+
         theme = getattr(runtime, "theme", None)
         if theme is None:
             return False, "拿不到 runtime.theme"
-        accent = str(getattr(theme, "accent", "")).lower()
-        background = str(getattr(theme, "background", "")).lower()
-        if accent != "#e8802a":
-            return False, f"强调色不是虎橙：{accent!r}（应用到的主题）"
-        if background != "#14100b":
-            return False, f"背景不是虎纹黑：{background!r}"
+        problems = []
+        for token in ("background", "surface", "accent", "text"):
+            actual = str(getattr(theme, token, "")).lower()
+            if actual != TIGER_DARK[token]:
+                problems.append(f"{token}={actual!r}（应为 {TIGER_DARK[token]}）")
         custom = getattr(theme, "custom", {}) or {}
-        if custom.get("stripe") != "#0d0a07":
-            return False, f"自定义令牌 stripe 没生效：{custom.get('stripe')!r}"
-        return True, f"accent={accent} background={background} stripe=#0d0a07"
+        if custom.get("stripe") != TIGER_DARK["stripe"]:
+            problems.append(f"自定义令牌 stripe={custom.get('stripe')!r}")
+        if problems:
+            return False, "；".join(problems)
+        return True, (f"accent={TIGER_DARK['accent']} background={TIGER_DARK['background']} "
+                      f"stripe={TIGER_DARK['stripe']}（深色黑橙）")
 
-    check("虎猫皮毛主题已应用（橙/黑/白）", tiger_theme)
+    check("虎猫皮毛主题已应用（深色：黑 + 橙）", tiger_theme)
+
+    def theme_switch() -> tuple[bool, str]:
+        """切到浅色（白橙）再切回来 —— 两套主题都要真的生效。"""
+        from tcide.theme import TIGER_LIGHT
+
+        app.apply_theme("light")
+        pump()
+        light = getattr(runtime, "theme", None)
+        if light is None or str(light.background).lower() != TIGER_LIGHT["background"]:
+            return False, f"浅色没生效：background={getattr(light, 'background', None)!r}"
+        if str(light.accent).lower() != TIGER_LIGHT["accent"]:
+            return False, f"浅色下强调色不对：{light.accent!r}"
+        if not app._stylesheet_applied:
+            return False, "样式表没有应用"
+        app.apply_theme("dark")
+        pump()
+        restored = str(getattr(runtime, "theme", None).background).lower()
+        if restored != "#0d0b09":
+            return False, f"切回深色失败：{restored!r}"
+        return True, (f"浅色 background={TIGER_LIGHT['background']} → "
+                      f"深色 background={restored}")
+
+    check("主题切换：浅色（白橙）与切回深色", theme_switch)
 
     def sample_file() -> tuple[bool, str]:
         """「新建示例文件并打开」：真的建出来、真的打开、**用完删掉**。

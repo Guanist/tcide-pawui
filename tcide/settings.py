@@ -43,6 +43,8 @@ class Settings:
     # -- 界面 --
     font_size: int = 13
     compact: bool = False
+    #: 主题：``dark`` = 黑橙，``light`` = 白橙（见 tcide/theme.py）
+    theme: str = "dark"
     ui_scale: str = "100%"          # 预留：高 DPI 缩放
     editor_font: str = "Cascadia Mono"
     monaco_enabled: bool = True     # 关掉则退回内置编辑器（省内存）
@@ -85,9 +87,13 @@ def normalize(settings: Settings) -> Settings:
     provider = (settings.provider or "deepseek").strip().lower()
     if provider not in PROVIDERS:
         provider = "custom" if settings.base_url else "deepseek"
+    theme = (settings.theme or "dark").strip().lower()
+    if theme not in ("dark", "light"):
+        theme = "dark"
     return replace(
         settings,
         provider=provider,
+        theme=theme,
         model=(settings.model or "").strip(),
         api_key=(settings.api_key or "").strip(),
         base_url=(settings.base_url or "").strip().rstrip("/"),
