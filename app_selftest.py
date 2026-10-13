@@ -289,8 +289,27 @@ def _run_checks(runtime, app, qapp) -> list[Check]:
 
         is_real_png = workspace.read_bytes(png, max_bytes=8).startswith(
             b"\x89PNG\r\n\x1a\n")
-        row = next((label for label, target in app.state.tree_paths.items()
-                    if target == png), "")
+
+        def tree_row(name: str) -> str:
+            return next((label for label, target in app.state.tree_paths.items()
+                         if target == name), "")
+
+        # 文件树是**懒加载**的：未展开的目录不会出现在 tree_paths 里。
+        # 第一版直接取"第一个 png"去查，一旦它落在折叠目录里就误报
+        # "不在文件树里" ✗ —— 所以先把所在目录展开，再查；仍查不到就换一个
+        # 确实在树里的 png（宁可测到别的图，也不要假失败）。
+        row = tree_row(png)
+        if not row and "/" in png:
+            parent = png.rsplit("/", 1)[0]
+            app.state.expanded.add(parent)
+            app.refresh_tree()
+            pump()
+            row = tree_row(png)
+        if not row:
+            for candidate in workspace.iter_files():
+                if candidate.lower().endswith(".png") and tree_row(candidate):
+                    png, row = candidate, tree_row(candidate)
+                    break
         if not row:
             return False, f"{png} 不在文件树里，无法测试点选路径"
         app.on_tree_select(row)
