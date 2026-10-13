@@ -197,6 +197,20 @@ TCIDE_CONSOLE=1 pyinstaller tcide-pawui.spec    # 带控制台，排查启动崩
 每个源文件头部都有 **SPDX 标识**（`tools/apply_licenses.py` 幂等地写入，
 并校验 LICENSE 确实是 LGPL-3.0 全文）。
 
+### 与姊妹项目 `Guanist/TCIDE` 的差异（**有意为之**，不是笔误）
+
+| 仓库 | 授权 | 为什么 |
+|---|---|---|
+| **本仓 `tcide-pawui`** | **`LGPL-3.0-or-later`** | 与依赖的 **PawUI 保持一致**（上游 `pyproject.toml` 声明 `LGPL-3.0-or-later`，`LICENSE` 为 Lesser 全文 —— 已按上游原文核对过） |
+| `Guanist/TCIDE` | **`LGPL-3.0-only`**（严格第 3 版） | 该仓自己的选择：不含 "or any later version" |
+
+两处都是同一版权方 `Guanist, Inc.` 的决定。`TCIDE` 的 `tcide_core/` 是从本仓
+`tcide/` 搬运的，同样的版权方按 LGPL-3.0 的授权条款再以更严格的 `-only` 发布是允许的
+（`-or-later` 给的是"选择权"，选择第 3 版即 `-only`）。
+
+改这两仓授权时请一并看 [TCIDE 的许可证门禁](https://github.com/Guanist/TCIDE/blob/main/tests/test_license.py)
+与本仓的 `tests/test_layering.py`（两边都有测试盯着，改错会红）。
+
 `tcide/` 的边界由测试守着，破坏即 CI 失败：
 
 - `test_package_does_not_import_pawui` —— 库侧不得依赖 PawUI
@@ -204,7 +218,9 @@ TCIDE_CONSOLE=1 pyinstaller tcide-pawui.spec    # 带控制台，排查启动崩
 - `test_package_does_not_import_qt_at_module_level` —— 库侧模块级不得拖进界面栈
   （`tcide/web/bridge.py` 里的 PySide6 是**函数内惰性导入**，属刻意设计：
   不装 Qt 也能导入这个库；PySide6 本身是 LGPL）
-- `test_every_library_file_is_lgpl` / `test_every_app_file_is_gpl` —— SPDX 头门禁
+- `test_every_python_file_carries_the_lgpl_header` —— 全仓 `.py` 必须有 LGPL 头
+- `test_license_file_is_the_full_lgpl_text` —— `LICENSE` 必须是 LGPL-3.0 全文
+- `test_no_bare_gpl_identifier_anywhere` —— 不得残留单独的 GPL 标识
 
 > 界面自检原本在库侧（`tcide/shell_selftest.py`），为了让 LGPL 边界**没有例外**，
 > 已移到应用侧 `app_selftest.py`。
