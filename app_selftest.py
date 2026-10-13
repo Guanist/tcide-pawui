@@ -656,6 +656,59 @@ def _run_checks(runtime, app, qapp) -> list[Check]:
 
     check("变更页签：提案 → 清单 → 逐文件驳回", changes_tab)
 
+    def plan_mode() -> tuple[bool, str]:
+        """计划模式：进入 → 权限锁只读 → 出方案 → 落盘 → 退出恢复原档位。
+
+        **不碰项目文件**：落盘的方案在 ``.tcide/plans/`` 下，用完即删。
+        """
+        before = app.permission.level
+        saved_path = None
+        try:
+            app._set_permission("ask")           # 先回到一个已知档位
+            app.enter_plan_mode("给设置面板加搜索")
+            pump()
+            if not app.state.plan_mode:
+                return False, "没有进入计划模式"
+            if app.permission.level != "read_only":
+                return False, f"计划模式下权限没锁到只读：{app.permission.level!r}"
+            if not app.state.plan_text.strip():
+                return False, "计划模式下没有生成方案"
+            if "步骤" not in app.state.plan_text:
+                return False, "方案里没有步骤清单"
+
+            # 真的锁住了吗？让工具注册表试一次写文件
+            denied = app.state.tools.call("write_file",
+                                          {"path": ".selftest-plan.tmp",
+                                           "content": "x"})
+            if denied.ok or app.state.workspace.exists(".selftest-plan.tmp"):
+                return False, "计划模式只读锁没生效 —— 竟然写进去了"
+
+            app.cmd_plan_save()
+            pump()
+            store = app._plan_store()
+            if not store.list():
+                return False, "方案没有落盘到 .tcide/plans/"
+            saved_path = store.dir / f"{store.list()[-1]}.md"
+
+            app.cmd_plan_approve()
+            pump()
+            if app.state.plan_mode:
+                return False, "批准后仍在计划模式"
+            if app.permission.level != "ask":
+                return False, f"批准后没有恢复原档位：{app.permission.level!r}"
+            return True, "锁只读、出方案、落盘、批准后恢复档位"
+        finally:
+            app._set_permission(before)
+            if saved_path is not None and saved_path.is_file():
+                saved_path.unlink()
+            try:
+                if app._plan_store().dir.is_dir() and not app._plan_store().list():
+                    app._plan_store().dir.rmdir()
+            except Exception:      # noqa: BLE001
+                pass
+
+    check("计划模式：权限锁只读 → 出方案 → 落盘 → 批准恢复", plan_mode)
+
     def sample_file() -> tuple[bool, str]:
         """「新建示例文件并打开」：真的建出来、真的打开、**用完删掉**。
 

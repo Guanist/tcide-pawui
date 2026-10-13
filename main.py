@@ -59,6 +59,7 @@ from tcide.memory import ProjectMemoryBuilder
 from tcide.models import PRESETS, ChatResponse, ModelConfig, ModelError
 from tcide import theme as tiger_theme
 from tcide.changes import ChangeSummary
+from tcide.plans import Plan, PlanStore, draft_plan
 from tcide.permissions import LABELS, LEVELS, PermissionPolicy
 from tcide.settings import (Settings, config_path as settings_path,
                             load as load_settings, normalize as normalize_settings,
@@ -165,6 +166,12 @@ class AppState:
     changes_paths: dict[str, str] = field(default_factory=dict)
     changes_summary: str = "本轮没有文件变更"
     changes_hint: str = ""
+    #: 计划模式：AI 只出方案不动手（见 tcide/plans.py）
+    plan_mode: bool = False
+    plan_text: str = ""
+    plan_summary: str = "还没有方案"
+    plan_hint: str = ""
+    plan_toggle_label: str = "进入计划模式"
     model: str = ""
     api_key: str = ""
     status_left: str = "就绪"
@@ -381,6 +388,8 @@ if __name__ == "__main__":
             "on_settings_provider", "on_settings_timeout", "on_settings_font",
             "on_settings_compact", "on_settings_engine", "on_settings_gate",
             "on_permission_change",
+            "cmd_plan_toggle", "cmd_plan_save", "cmd_plan_approve",
+            "cmd_plan_discard",
             "on_change_select", "cmd_change_accept", "cmd_change_reject",
             "cmd_changes_accept_all", "cmd_changes_reject_all", "cmd_show_changes",
             "on_settings_restore", "on_settings_theme",
@@ -1141,6 +1150,11 @@ if __name__ == "__main__":
             "changes_summary": self.state.changes_summary,
             "changes_hint": self.state.changes_hint,
             "changes_paths": dict(self.state.changes_paths),
+            "plan_mode": self.state.plan_mode,
+            "plan_text": self.state.plan_text,
+            "plan_summary": self.state.plan_summary,
+            "plan_hint": self.state.plan_hint,
+            "plan_toggle_label": self.state.plan_toggle_label,
             "settings_restore_label": "开" if self.settings.restore_last_project else "关",
             "settings_key_hint": (f"当前：{settings_summary(self.settings)}"
                                   if self.settings.api_key else "当前未配置 Key"),
@@ -1609,6 +1623,96 @@ if __name__ == "__main__":
     def cmd_changes_reject_all(self, *_args) -> None:
         count = self.review.reject()
         self._after_review(None, f"已驳回 {count} 处改动")
+
+    # -- 计划模式：先方案、人批了再动手 ---------------------------------
+    #
+    # 依据：Codex `/plan`、DeepSeek Harness `plan-mode`+`exit_plan_mode`、
+    # Trae 的 Plan/Spec/Goal。这里的硬约束是：计划模式 → **强制只读档**，
+    # 于是"AI 不能动手"是权限层保证的，不靠提示词自觉。
+
+    def _plan_store(self) -> PlanStore:
+        return PlanStore(self.state.root)
+
+    def enter_plan_mode(self, requirement: str = "") -> None:
+        """进入计划模式：记住原档位 → 切只读 → 生成/展示方案。"""
+        if not self.state.plan_mode:
+            self._permission_before_plan = self.permission.level
+        self.state.plan_mode = True
+        self._set_permission("read_only")            # ★ 硬约束
+        self.state.plan_toggle_label = "退出计划模式"
+        self.state.plan_hint = ("计划模式已开启：AI 只能读代码（权限已锁到只读）。"
+                                "把需求发在下方输入框，或直接点「批准并执行」。")
+        if requirement:
+            self._make_plan(requirement)
+        self._select_dock_tab("计划")
+        self.push()
+
+    def exit_plan_mode(self, *, restore: bool = True) -> None:
+        """退出计划模式（可选恢复进入前的档位）。"""
+        self.state.plan_mode = False
+        self.state.plan_toggle_label = "进入计划模式"
+        self.state.plan_hint = "计划模式已关闭（AI 可以动手了）"
+        if restore:
+            self._set_permission(getattr(self, "_permission_before_plan", "ask"))
+        else:
+            self.push()
+
+    def _make_plan(self, requirement: str) -> None:
+        """产出方案草稿并展示（离线可用；在线时模型会照 plan_prompt 的骨架回）。"""
+        files = []
+        try:
+            files = list(self.state.workspace.iter_files())[:6]
+        except Exception:      # noqa: BLE001 - 列不出来也不影响出方案
+            files = []
+        plan = draft_plan(requirement, files=files)
+        self._plan = plan
+        self.state.plan_text = plan.to_markdown()
+        self.state.plan_summary = plan.summary()
+        self._append_chat("·", f"已生成{plan.summary()} —— 见「计划 🗒」页签")
+
+    def cmd_plan_toggle(self, *_args) -> None:
+        """工具栏/页签按钮：进出计划模式。"""
+        if self.state.plan_mode:
+            self.exit_plan_mode()
+            self._set_status("已退出计划模式")
+        else:
+            self.enter_plan_mode()
+            self._set_status("已进入计划模式（AI 只能读）")
+
+    def cmd_plan_save(self, *_args) -> None:
+        """方案落盘到 ``.tcide/plans/``（可纳入版本控制，和 Trae 的 .trae/ 同理）。"""
+        plan = getattr(self, "_plan", None)
+        if plan is None or plan.is_empty():
+            self._set_status("还没有方案可保存")
+            return self.push()
+        try:
+            target = self._plan_store().save(plan)
+        except Exception as exc:      # noqa: BLE001
+            self._set_status(f"方案保存失败：{type(exc).__name__}: {exc}")
+            return self.push()
+        self._set_status(f"方案已保存：{target.relative_to(self.state.root)}")
+        self.push()
+
+    def cmd_plan_approve(self, *_args) -> None:
+        """批准：退出计划模式并恢复档位 —— 之后 AI 才能动手。"""
+        if not self.state.plan_mode:
+            self._set_status("当前不在计划模式")
+            return self.push()
+        plan = getattr(self, "_plan", None)
+        title = plan.title if plan is not None else "（未生成方案）"
+        self.exit_plan_mode()
+        self._append_chat("·", f"已批准方案「{title}」—— 权限已恢复，AI 可以动手了")
+        self._set_status("已批准方案")
+
+    def cmd_plan_discard(self, *_args) -> None:
+        self._plan = None
+        self.state.plan_text = ""
+        self.state.plan_summary = "还没有方案"
+        if self.state.plan_mode:
+            self.exit_plan_mode()
+        else:
+            self.push()
+        self._set_status("已丢弃方案")
 
     def cmd_show_changes(self, *_args) -> None:
         """切到「变更」页签（agent 跑完自动调用 —— 这就是"实时跟随"）。"""
@@ -2218,6 +2322,17 @@ if __name__ == "__main__":
         requirement = str(text).strip()
         if not requirement:
             return
+        # `/plan <需求>`：进入计划模式并出方案（不直接动手）
+        if requirement.startswith("/plan"):
+            self._append_chat("你", requirement)
+            self.enter_plan_mode(requirement[len("/plan"):].strip() or requirement)
+            return
+        # 计划模式下的普通输入 = 出/更新方案，而不是执行
+        if self.state.plan_mode:
+            self._append_chat("你", requirement)
+            self._make_plan(requirement)
+            self._select_dock_tab("计划")
+            return self.push()
         self._append_chat("你", requirement)
         if not self.state.api_key:
             self._offline_run(requirement)

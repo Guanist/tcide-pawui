@@ -154,6 +154,20 @@
         </Column>
       </Tab>
 
+      <Tab label="计划 🗒">
+        <Column gap="6">
+          <Text size="12" bold="true">{$plan_summary}</Text>
+          <TextArea id="plan_body" value="{$plan_text}" readonly="true" height="140"/>
+          <Text color="subtext" size="11">{$plan_hint}</Text>
+          <Row gap="8">
+            <Button on_click="cmd_plan_toggle">{$plan_toggle_label}</Button>
+            <Button on_click="cmd_plan_save">保存方案</Button>
+            <Button on_click="cmd_plan_approve">批准并执行</Button>
+            <Button on_click="cmd_plan_discard">丢弃</Button>
+          </Row>
+        </Column>
+      </Tab>
+
       <Tab label="AI 对话">
                 <Column gap="6">
                   <Markdown>{$chat_log}</Markdown>
@@ -373,6 +387,11 @@ changes_rows = []
 changes_summary = "本轮没有文件变更"
 changes_paths = {}
 changes_hint = "还没有待审阅的改动。让 AI 改点东西，这里会出现逐文件清单。"
+plan_mode = False
+plan_text = "计划模式：在下方输入框写需求，或在此查看方案。"
+plan_summary = "还没有方案"
+plan_hint = "计划模式下 AI 只能读代码 —— 它写不了文件（由权限层保证）"
+plan_toggle_label = "进入计划模式"
 permission_items = ["只读", "逐次确认", "自动"]
 permission_note = "逐次确认：AI 的写操作先进入审核队列"
 review_badge = "待审核 0"
