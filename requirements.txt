@@ -1,7 +1,7 @@
 # 运行 tcide-pawui 需要的依赖
 #
-# 说明：本项目在 **PawUI 0.1.3.3**（源码/GitHub 版）上开发；PyPI 上的 PawUI 版本较旧，
-# 若直接用 pip 装到的版本过旧，界面会缺少本项目用到的组件与行为。
+# 本项目在 **PawUI 0.1.3.3** 上开发（PyPI 上有该版本及更新版本，可直接 pip 安装：
+# 0.1.3.5.1 / 0.1.3.5 / 0.1.3.3 / …）。更新的 PawUI 未逐一实测。
 # PawUI 是 GPL-3.0-or-later，因此应用侧同样是 GPL；纯后端 tcide/ 是 LGPL-3.0-or-later。
 
 PySide6>=6.6

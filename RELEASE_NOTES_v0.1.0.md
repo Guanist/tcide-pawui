@@ -38,8 +38,10 @@ python -m tcide.cli analyze   # 架构分析（可对任意项目跑）
   能否运行，不便附上未经验证的 exe。
 - **LSP 未接真语言服务器**：协议与客户端已用**假语言服务器**端到端验证；本机
   `可用 0 / 6`，缺失时界面会如实降级并给出安装提示。
-- 依赖 **PawUI ≥ 0.1.3.3**（从上游源码安装；PyPI 版本较旧）。开发期间发现的两个
-  PawUI 问题已提交上游（[#11](https://github.com/LK-BLOG/PawUI/issues/11) /
+- 依赖 **PawUI ≥ 0.1.3.3**（可直接 `pip install pawui`；PyPI 上现有 0.1.3.3 ~ 0.1.3.5.1）。
+  本项目在 **0.1.3.3** 上开发与测试；更新的 PawUI（如 0.1.3.5.1）**未逐一实测**。
+  开发期间发现的两个 PawUI 问题已提交上游
+  （[#11](https://github.com/LK-BLOG/PawUI/issues/11) /
   [#12](https://github.com/LK-BLOG/PawUI/issues/12)），规避方式见
   [PAWUI_FINDINGS.md](https://github.com/Guanist/tcide-pawui/blob/main/PAWUI_FINDINGS.md)。
 
